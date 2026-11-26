@@ -31,13 +31,12 @@ impl RepositoryView {
         let cache = cx.try_global::<RepoCache>().cloned();
         let cache_gen = cache.as_ref().map(RepoCache::generation).unwrap_or(0);
 
-        if !force {
-            if let Some(hit) = cache.as_ref().and_then(|c| c.get_tree(&origin, project.id, &git_ref, &dir_path)) {
+        if !force
+            && let Some(hit) = cache.as_ref().and_then(|c| c.get_tree(&origin, project.id, &git_ref, &dir_path)) {
                 self.dirs.insert(dir_path, hit.entries);
                 cx.notify();
                 return;
             }
-        }
         let path_req = dir_path.clone();
         let path_key = dir_path.clone();
         let ref_req = git_ref.clone();
@@ -73,15 +72,14 @@ impl RepositoryView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if let Some(r) = git_ref.filter(|s| !s.is_empty()) {
-            if self.active_ref != r {
+        if let Some(r) = git_ref.filter(|s| !s.is_empty())
+            && self.active_ref != r {
                 self.active_ref = r.clone();
                 self.dirs.clear();
                 self.dir_tasks.clear();
                 self.expanded_dirs.clear();
                 self.state.update(cx, |s, _| s.set_active_ref(r));
             }
-        }
         if !self.dirs.contains_key("") { self.load_dir(String::new(), false, cx); }
         self.expand_ancestors(&path, cx);
         self.active_path = Some(path.clone());
@@ -99,12 +97,11 @@ impl RepositoryView {
         let cache = cx.try_global::<RepoCache>().cloned();
         let cache_gen = cache.as_ref().map(RepoCache::generation).unwrap_or(0);
 
-        if let Some(sha) = blob_sha.as_deref() {
-            if let Some(blob) = cache.as_ref().and_then(|c| c.get_blob(&origin, project.id, sha)) {
+        if let Some(sha) = blob_sha.as_deref()
+            && let Some(blob) = cache.as_ref().and_then(|c| c.get_blob(&origin, project.id, sha)) {
                 self.apply_blob(&path, blob, line, window, cx);
                 return;
             }
-        }
         if offline { cx.notify(); return; }
 
         self.blob_loading = true;
@@ -126,11 +123,10 @@ impl RepositoryView {
                 v.blob_loading = false;
                 match res {
                     Ok(Ok(blob)) => {
-                        if let Some(sha) = blob.sha.as_deref().or(blob_sha.as_deref()) {
-                            if let Some(c) = cache.as_ref() {
+                        if let Some(sha) = blob.sha.as_deref().or(blob_sha.as_deref())
+                            && let Some(c) = cache.as_ref() {
                                 c.insert_blob(cache_gen, &origin, project.id, sha, blob.clone());
                             }
-                        }
                         v.apply_blob(&path, blob, line, window, cx);
                     }
                     Ok(Err(err)) | Err(err) => {

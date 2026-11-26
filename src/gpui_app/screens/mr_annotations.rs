@@ -60,11 +60,10 @@ pub fn discussion_line_position(
     if pos.position_type != "text" {
         return None;
     }
-    if let Some(head) = active_head_sha {
-        if !pos.head_sha.is_empty() && pos.head_sha != head {
+    if let Some(head) = active_head_sha
+        && !pos.head_sha.is_empty() && pos.head_sha != head {
             return None;
         }
-    }
     let path = pos
         .new_path
         .as_deref()

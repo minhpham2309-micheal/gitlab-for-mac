@@ -64,7 +64,7 @@ fn attach_count(item: SidebarMenuItem, count: Option<u32>) -> SidebarMenuItem {
     })
 }
 
-pub fn render_sidebar(state: &Entity<AppState>, cx: &mut App) -> impl IntoElement {
+pub fn render_sidebar(state: &Entity<AppState>, cx: &mut App) -> impl IntoElement + use<> {
     let st = state.read(cx);
     let collapsed = st.sidebar_collapsed;
     let active_screen = st.screen;

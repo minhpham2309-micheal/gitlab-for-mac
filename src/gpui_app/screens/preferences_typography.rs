@@ -22,7 +22,7 @@ pub fn render_typography_card(
     view: &PreferencesView,
     prefs: &Prefs,
     cx: &mut Context<PreferencesView>,
-) -> impl IntoElement {
+) -> impl IntoElement + use<> {
     let theme = cx.theme();
     let ui_sz = prefs.ui_font_size();
     let ui_fam = prefs.ui_font_family().to_string();

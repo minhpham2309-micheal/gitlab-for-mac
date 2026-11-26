@@ -20,7 +20,7 @@ pub fn render_mr_list_panel(
     selected_iid: Option<u64>,
     client: Option<GitLab>,
     cx: &mut Context<MergeRequestsView>,
-) -> impl IntoElement {
+) -> impl IntoElement + use<> {
     let theme = cx.theme();
     let view_weak = cx.entity().downgrade();
 
@@ -108,7 +108,7 @@ pub fn render_mr_list_panel(
         .child(list)
 }
 
-pub fn render_mr_header(mr: &MergeRequest, cx: &mut Context<MergeRequestsView>) -> impl IntoElement {
+pub fn render_mr_header(mr: &MergeRequest, cx: &mut Context<MergeRequestsView>) -> impl IntoElement + use<> {
     let theme = cx.theme();
     let dark = theme.is_dark();
     let can_review = mr_can_review(&mr.state);

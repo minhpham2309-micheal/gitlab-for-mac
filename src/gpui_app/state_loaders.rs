@@ -153,9 +153,9 @@ impl AppState {
                         match projects_res {
                             Ok(projects) => {
                                 state.projects = projects;
-                                if state.project.is_none() {
-                                    if let Some(saved) = state.prefs.project.clone() {
-                                        if let Some(found) = state
+                                if state.project.is_none()
+                                    && let Some(saved) = state.prefs.project.clone()
+                                        && let Some(found) = state
                                             .projects
                                             .iter()
                                             .find(|p| p.path_with_namespace == saved)
@@ -164,8 +164,6 @@ impl AppState {
                                             state.select_project(found, cx);
                                             return;
                                         }
-                                    }
-                                }
                                 state.refresh_sidebar_counts(cx);
                             }
                             Err(err) => state.status = err,

@@ -32,12 +32,11 @@ impl MergeRequestsView {
                         let n = items.len();
                         view.mrs = items;
                         view.state.update(cx, |s, cx| s.set_status(format!("{n} merge requests"), cx));
-                        if let Some(pending) = view.pending_iid.take() {
-                            if let Some(found) = view.mrs.iter().find(|m| m.iid == pending).cloned() {
+                        if let Some(pending) = view.pending_iid.take()
+                            && let Some(found) = view.mrs.iter().find(|m| m.iid == pending).cloned() {
                                 view.select_mr(found, cx);
                                 return;
                             }
-                        }
                     }
                     Ok(Err(err)) | Err(err) => view.state.update(cx, |s, cx| s.set_status(err, cx)),
                 }
@@ -119,8 +118,8 @@ impl MergeRequestsView {
             self.state.update(cx, |s, cx| s.set_status("Only open merge requests can be mutated", cx));
             return;
         }
-        if matches!(kind, "merge" | "close") {
-            if let Some(window) = window {
+        if matches!(kind, "merge" | "close")
+            && let Some(window) = window {
                 let (h_ep, p_ep, iid) = (st.host_epoch, st.project_epoch, mr.iid);
                 let host = st.active_host.as_ref().map(|h| h.hostname.clone()).unwrap_or_default();
                 let weak = cx.entity().downgrade();
@@ -149,7 +148,6 @@ impl MergeRequestsView {
                 );
                 return;
             }
-        }
         self.exec_mr_mutation(kind, cx);
     }
 

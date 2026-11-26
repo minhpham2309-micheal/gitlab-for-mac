@@ -20,7 +20,7 @@ pub fn render_top_bar(
     state: &Entity<AppState>,
     _window: &mut Window,
     cx: &mut App,
-) -> impl IntoElement {
+) -> impl IntoElement + use<> {
     let st = state.read(cx);
     let active_host = st
         .active_host

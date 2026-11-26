@@ -24,7 +24,7 @@ pub fn render_file_table(
     commits_loading: bool,
     show_commits: bool,
     cx: &mut Context<ProjectOverviewView>,
-) -> impl IntoElement {
+) -> impl IntoElement + use<> {
     let theme = cx.theme();
     let mut table = div()
         .w_full()

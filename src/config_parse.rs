@@ -13,11 +13,10 @@ pub fn parse(text: &str) -> Result<GlabConfig, ConfigError> {
             continue;
         }
         if !in_hosts {
-            if let Some(value) = key_value(line, "host") {
-                if !value.is_empty() {
+            if let Some(value) = key_value(line, "host")
+                && !value.is_empty() {
                     default_host = Some(value);
                 }
-            }
             if line == "hosts:" {
                 in_hosts = true;
             }
@@ -54,11 +53,10 @@ pub fn parse(text: &str) -> Result<GlabConfig, ConfigError> {
 }
 
 fn flush_host(hosts: &mut Vec<HostAuth>, host: Option<HostAuth>) {
-    if let Some(host) = host {
-        if !host.token.is_empty() {
+    if let Some(host) = host
+        && !host.token.is_empty() {
             hosts.push(host);
         }
-    }
 }
 
 fn apply_host_field(host: &mut HostAuth, line: &str) {
@@ -72,11 +70,10 @@ fn apply_host_field(host: &mut HostAuth, line: &str) {
         if !value.is_empty() {
             host.api_protocol = value;
         }
-    } else if let Some(value) = key_value(line, "user") {
-        if !value.is_empty() && value != "null" {
+    } else if let Some(value) = key_value(line, "user")
+        && !value.is_empty() && value != "null" {
             host.user = Some(value);
         }
-    }
 }
 
 fn key_value(line: &str, key: &str) -> Option<String> {

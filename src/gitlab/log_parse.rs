@@ -78,12 +78,11 @@ fn flush_span(text: &str, start: usize, style: Style, spans: &mut Vec<AnsiSpan>)
     }
     let slice = &text[start..];
     let color = tint(slice, style.color());
-    if let Some(last) = spans.last_mut() {
-        if last.color == color && last.bold == style.bold && last.range.end == start {
+    if let Some(last) = spans.last_mut()
+        && last.color == color && last.bold == style.bold && last.range.end == start {
             last.range.end = text.len();
             return;
         }
-    }
     spans.push(AnsiSpan {
         range: start..text.len(),
         color,

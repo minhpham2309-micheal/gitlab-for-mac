@@ -77,11 +77,10 @@ impl LogModel {
     }
 
     pub fn expand_for_line(&mut self, line_ix: usize) {
-        if let Some(sec_ix) = self.lines.get(line_ix).and_then(|l| l.section) {
-            if let Some(sec) = self.sections.get_mut(sec_ix) {
+        if let Some(sec_ix) = self.lines.get(line_ix).and_then(|l| l.section)
+            && let Some(sec) = self.sections.get_mut(sec_ix) {
                 sec.collapsed = false;
             }
-        }
     }
 
     pub fn push_bytes(&mut self, chunk: &[u8]) {
@@ -161,13 +160,11 @@ impl LogModel {
         }
         let (text, spans) = parse_line_spans(raw, &mut self.style);
         let section = self.active_section_stack.last().copied();
-        if let Some(sec_ix) = section {
-            if let Some(sec) = self.sections.get_mut(sec_ix) {
-                if sec.start_line == self.lines.len() && !text.trim().is_empty() {
+        if let Some(sec_ix) = section
+            && let Some(sec) = self.sections.get_mut(sec_ix)
+                && sec.start_line == self.lines.len() && !text.trim().is_empty() {
                     sec.header = text.trim().to_string();
                 }
-            }
-        }
         self.total_bytes = self.total_bytes.saturating_add(text.len());
         let number = self.next_line_number;
         self.next_line_number += 1;

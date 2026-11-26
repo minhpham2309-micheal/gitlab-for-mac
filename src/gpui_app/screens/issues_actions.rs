@@ -24,12 +24,11 @@ impl IssuesView {
                 match res {
                     Ok(Ok(items)) => {
                         view.issues = items;
-                        if let Some(iid) = view.pending_iid.take() {
-                            if let Some(found) = view.issues.iter().find(|i| i.iid == iid).cloned() {
+                        if let Some(iid) = view.pending_iid.take()
+                            && let Some(found) = view.issues.iter().find(|i| i.iid == iid).cloned() {
                                 view.select_issue(found, cx);
                                 return;
                             }
-                        }
                     }
                     Ok(Err(err)) | Err(err) => view.state.update(cx, |s, cx| s.set_status(err, cx)),
                 }

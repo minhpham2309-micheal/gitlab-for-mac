@@ -107,11 +107,10 @@ pub fn config_path() -> Option<PathBuf> {
 }
 
 pub fn load() -> Result<GlabConfig, ConfigError> {
-    if let Some(primary) = config_path() {
-        if primary.exists() {
+    if let Some(primary) = config_path()
+        && primary.exists() {
             return load_from(&primary);
         }
-    }
     if let Some(home) = dirs::home_dir() {
         let fallback = home.join(".config/glab-cli/config.yml");
         if fallback.exists() {

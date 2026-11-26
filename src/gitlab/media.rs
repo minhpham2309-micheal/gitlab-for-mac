@@ -93,8 +93,8 @@ pub fn resolve_upload_url(raw_src: &str, project_id: Option<u64>, auth: &HostAut
     }
     if let Some(rest) = trimmed.strip_prefix("/uploads/") {
         let (secret, filename) = rest.split_once('/')?;
-        if let Some(pid) = project_id {
-            if valid_upload_segment(secret) && valid_upload_segment(filename) {
+        if let Some(pid) = project_id
+            && valid_upload_segment(secret) && valid_upload_segment(filename) {
                 let api_base = auth.api_base().ok()?;
                 let raw = format!(
                     "{api_base}/projects/{pid}/uploads/{}/{}",
@@ -103,7 +103,6 @@ pub fn resolve_upload_url(raw_src: &str, project_id: Option<u64>, auth: &HostAut
                 );
                 return Url::parse(&raw).ok();
             }
-        }
         let base = auth.api_base_url().ok()?;
         return base.join(trimmed).ok();
     }

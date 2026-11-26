@@ -20,7 +20,7 @@ pub fn render_commit_banner(
     expanded: bool,
     app_state: &Entity<AppState>,
     cx: &mut Context<ProjectOverviewView>,
-) -> impl IntoElement {
+) -> impl IntoElement + use<> {
     let theme = cx.theme();
     let Some(commit) = commit else {
         return div()

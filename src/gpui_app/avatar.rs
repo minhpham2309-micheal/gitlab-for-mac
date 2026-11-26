@@ -13,7 +13,7 @@ pub fn render_avatar(
     size_px: Pixels,
     client: Option<&GitLab>,
     cx: &mut App,
-) -> impl IntoElement {
+) -> impl IntoElement + use<> {
     let initial = fallback_name
         .trim_start_matches('@')
         .chars()

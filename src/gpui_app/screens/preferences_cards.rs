@@ -13,7 +13,7 @@ use super::preferences::PreferencesView;
 
 const RADIUS_PRESETS: &[(u16, &str)] = &[(0, "Square"), (4, "Compact"), (6, "Default"), (10, "Rounded")];
 
-pub fn render_appearance_card(prefs: &Prefs, cx: &mut Context<PreferencesView>) -> impl IntoElement {
+pub fn render_appearance_card(prefs: &Prefs, cx: &mut Context<PreferencesView>) -> impl IntoElement + use<> {
     let theme = cx.theme();
     let dark = prefs.is_dark();
     let radius = prefs.radius();

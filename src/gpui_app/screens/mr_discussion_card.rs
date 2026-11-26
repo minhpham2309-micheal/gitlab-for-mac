@@ -23,7 +23,7 @@ pub fn render_discussion_card(
     md_ctx: &MarkdownProjectContext,
     client: Option<&GitLab>,
     cx: &mut Context<MergeRequestsView>,
-) -> Option<impl IntoElement> {
+) -> Option<impl IntoElement + use<>> {
     let non_sys: Vec<_> = disc.notes.iter().filter(|n| !n.system).collect();
     if non_sys.is_empty() {
         return None;

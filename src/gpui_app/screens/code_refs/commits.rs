@@ -100,9 +100,8 @@ impl CommitsView {
                     Ok(Ok(items)) => {
                         if !items.is_empty() || !append { v.page = page; }
                         if append { v.commits.extend(items); } else { v.commits = items; }
-                        if v.selected_sha.is_none() {
-                            if let Some(first) = v.commits.first().map(|c| c.id.clone()) { v.select_commit(first, cx); }
-                        }
+                        if v.selected_sha.is_none()
+                            && let Some(first) = v.commits.first().map(|c| c.id.clone()) { v.select_commit(first, cx); }
                     }
                     Ok(Err(err)) | Err(err) => v.state.update(cx, |s, cx| s.set_status(err, cx)),
                 }

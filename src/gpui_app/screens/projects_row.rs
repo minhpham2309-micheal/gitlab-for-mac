@@ -14,7 +14,7 @@ pub fn render_project_row(
     client: Option<&GitLab>,
     state: Entity<AppState>,
     cx: &mut App,
-) -> impl IntoElement {
+) -> impl IntoElement + use<> {
     let av = render_avatar(
         project.avatar_url.as_deref(),
         &project.name,

@@ -33,7 +33,7 @@ pub fn encode_web_blob_url(web_url: &str, git_ref: &str, path: &str) -> String {
     format!("{}/-/blob/{}/{}", web_url.trim_end_matches('/'), urlencoding::encode(git_ref), encoded_path)
 }
 
-pub fn render_viewer_header(view: &RepositoryView, cx: &mut Context<RepositoryView>) -> impl IntoElement {
+pub fn render_viewer_header(view: &RepositoryView, cx: &mut Context<RepositoryView>) -> impl IntoElement + use<> {
     let theme = cx.theme();
     let has_file = view.active_path.is_some();
     let path = view.active_path.clone().unwrap_or_default();

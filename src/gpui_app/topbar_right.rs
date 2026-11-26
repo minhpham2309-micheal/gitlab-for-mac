@@ -46,7 +46,7 @@ fn count_pill(
         .child(SharedString::from(label))
 }
 
-pub fn render_top_bar_right(state: &Entity<AppState>, cx: &mut App) -> impl IntoElement {
+pub fn render_top_bar_right(state: &Entity<AppState>, cx: &mut App) -> impl IntoElement + use<> {
     let st = state.read(cx);
     let has_project = st.project.is_some();
     let project_web = st.project.as_ref().map(|p| p.web_url.clone());

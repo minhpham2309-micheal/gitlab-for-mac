@@ -48,7 +48,7 @@ impl TokioBridge {
         }
     }
 
-    pub fn spawn<F, T>(&self, fut: F) -> impl Future<Output = Result<T, String>> + Send + 'static
+    pub fn spawn<F, T>(&self, fut: F) -> impl Future<Output = Result<T, String>> + Send + 'static + use<F, T>
     where
         F: Future<Output = T> + Send + 'static,
         T: Send + 'static,
@@ -69,7 +69,7 @@ where
 fn spawn_on<F, T>(
     handle: &Handle,
     fut: F,
-) -> impl Future<Output = Result<T, String>> + Send + 'static
+) -> impl Future<Output = Result<T, String>> + Send + 'static + use<F, T>
 where
     F: Future<Output = T> + Send + 'static,
     T: Send + 'static,

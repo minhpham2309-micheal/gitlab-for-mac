@@ -120,11 +120,10 @@ pub fn safe_markdown(
         })
         .image_source(move |uri: &SharedUri| {
             let raw = uri.as_ref();
-            if let (Some(cache), Some(origin)) = (&cache, &origin) {
-                if let Some(CacheEntry::Ready(img)) = cache.lookup(origin, project_id, raw) {
+            if let (Some(cache), Some(origin)) = (&cache, &origin)
+                && let Some(CacheEntry::Ready(img)) = cache.lookup(origin, project_id, raw) {
                     return ImageSource::Image(img);
                 }
-            }
             // Never pass remote HTTP/HTTPS URLs to GPUI's unhardened HttpClient;
             // only bounded inline data:image/* URIs render without ImageCache.
             if is_safe_data_image_uri(raw) {
@@ -135,12 +134,12 @@ pub fn safe_markdown(
         })
 }
 
-pub fn render_markdown_with_uploads(
-    id_prefix: impl Into<String>,
+pub fn render_markdown_with_uploads<T: Into<String>>(
+    id_prefix: T,
     source: String,
     ctx: MarkdownProjectContext,
     cx: &mut App,
-) -> impl IntoElement {
+) -> impl IntoElement + use<T> {
     let prefix = id_prefix.into();
     let failed = prefetch_markdown_uploads(&source, &ctx, cx);
     let theme = cx.theme();

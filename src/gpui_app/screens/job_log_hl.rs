@@ -57,11 +57,10 @@ pub fn merge_highlight_runs(
         }
     }
 
-    if let Some((hs, he)) = valid_hit {
-        if !hit_emitted {
+    if let Some((hs, he)) = valid_hit
+        && !hit_emitted {
             runs.push((hs..he, hit_style));
         }
-    }
 
     runs
 }
