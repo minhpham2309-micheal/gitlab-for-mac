@@ -1,0 +1,189 @@
+use gpui_kit::{
+    component::{command::CommandState, ActiveTheme as _},
+    div, AnyElement, AppContext as _, Context, Entity, FocusHandle, Focusable,
+    InteractiveElement as _, IntoElement, ParentElement as _, Render, Styled as _, Subscription,
+    Window,
+};
+
+use crate::nav::Screen;
+
+use super::pajamas_theme::apply_theme_from_prefs;
+use super::palette::render_palette_overlay;
+use super::screens::{
+    code_refs::{BranchesView, CommitsView, TagsView},
+    issues::IssuesView,
+    merge_requests::MergeRequestsView,
+    ops::{
+        console::ConsoleView, releases::ReleasesView, runners::RunnersView,
+        schedules::SchedulesView, search::SearchView,
+    },
+    overview::ProjectOverviewView,
+    pipelines::PipelinesView,
+    preferences::PreferencesView,
+    projects::ProjectsView,
+    repository::{file_finder::FindFileModal, RepositoryView},
+    todos::TodosView,
+};
+use super::shell_actions::attach_shell_actions;
+use super::sidebar::render_sidebar;
+use super::state::AppState;
+use super::statusbar::render_status_bar;
+use super::topbar::render_top_bar;
+
+pub struct AppShell {
+    state: Entity<AppState>,
+    command_state: Entity<CommandState>,
+    projects_view: Entity<ProjectsView>,
+    overview_view: Entity<ProjectOverviewView>,
+    repo_view: Entity<RepositoryView>,
+    pipelines_view: Entity<PipelinesView>,
+    mrs_view: Entity<MergeRequestsView>,
+    branches_view: Entity<BranchesView>,
+    tags_view: Entity<TagsView>,
+    commits_view: Entity<CommitsView>,
+    issues_view: Entity<IssuesView>,
+    todos_view: Entity<TodosView>,
+    releases_view: Entity<ReleasesView>,
+    schedules_view: Entity<SchedulesView>,
+    runners_view: Entity<RunnersView>,
+    search_view: Entity<SearchView>,
+    console_view: Entity<ConsoleView>,
+    preferences_view: Entity<PreferencesView>,
+    find_file_modal: Entity<FindFileModal>,
+    palette_open: bool,
+    focus_handle: FocusHandle,
+    _sub: Subscription,
+}
+
+impl Focusable for AppShell {
+    fn focus_handle(&self, _: &gpui_kit::App) -> FocusHandle {
+        self.focus_handle.clone()
+    }
+}
+
+impl AppShell {
+    pub fn new(state: Entity<AppState>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let initial_prefs = state.read(cx).prefs.clone();
+        apply_theme_from_prefs(&initial_prefs, cx);
+        let s = &state;
+        let _sub = cx.observe(s, |_, _, cx| cx.notify());
+        Self {
+            command_state: cx.new(|cx| CommandState::new(window, cx)),
+            projects_view: cx.new(|cx| ProjectsView::new(s.clone(), window, cx)),
+            overview_view: cx.new(|cx| ProjectOverviewView::new(s.clone(), window, cx)),
+            repo_view: cx.new(|cx| RepositoryView::new(s.clone(), window, cx)),
+            pipelines_view: cx.new(|cx| PipelinesView::new(s.clone(), window, cx)),
+            mrs_view: cx.new(|cx| MergeRequestsView::new(s.clone(), window, cx)),
+            branches_view: cx.new(|cx| BranchesView::new(s.clone(), window, cx)),
+            tags_view: cx.new(|cx| TagsView::new(s.clone(), window, cx)),
+            commits_view: cx.new(|cx| CommitsView::new(s.clone(), window, cx)),
+            issues_view: cx.new(|cx| IssuesView::new(s.clone(), window, cx)),
+            todos_view: cx.new(|cx| TodosView::new(s.clone(), window, cx)),
+            releases_view: cx.new(|cx| ReleasesView::new(s.clone(), window, cx)),
+            schedules_view: cx.new(|cx| SchedulesView::new(s.clone(), window, cx)),
+            runners_view: cx.new(|cx| RunnersView::new(s.clone(), window, cx)),
+            search_view: cx.new(|cx| SearchView::new(s.clone(), window, cx)),
+            console_view: cx.new(|cx| ConsoleView::new(s.clone(), window, cx)),
+            preferences_view: cx.new(|cx| PreferencesView::new(s.clone(), window, cx)),
+            find_file_modal: cx.new(|cx| FindFileModal::new(s.clone(), window, cx)),
+            palette_open: false,
+            focus_handle: cx.focus_handle(),
+            state,
+            _sub,
+        }
+    }
+
+    pub fn is_palette_open(&self) -> bool { self.palette_open }
+    pub fn is_find_file_open(&self, cx: &gpui_kit::App) -> bool { self.find_file_modal.read(cx).is_open() }
+    pub fn has_overlay_open(&self, cx: &gpui_kit::App) -> bool { self.palette_open || self.is_find_file_open(cx) }
+    pub fn state(&self) -> &Entity<AppState> { &self.state }
+    pub fn mrs_view(&self) -> &Entity<MergeRequestsView> { &self.mrs_view }
+    pub fn repo_view(&self) -> &Entity<RepositoryView> { &self.repo_view }
+    pub fn overview_view(&self) -> &Entity<ProjectOverviewView> { &self.overview_view }
+
+    pub(crate) fn toggle_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.palette_open = !self.palette_open;
+        if self.palette_open {
+            let _ = self.find_file_modal.update(cx, |m, cx| m.close(cx));
+            self.command_state.update(cx, |cmd, cx| cmd.set_query("", window, cx));
+            self.command_state.focus_handle(cx).focus(window, cx);
+        } else {
+            self.focus_handle.focus(window, cx);
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn close_palette_only(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        if !self.palette_open { return false; }
+        self.palette_open = false;
+        if !self.is_find_file_open(cx) { self.focus_handle.focus(window, cx); }
+        cx.notify();
+        true
+    }
+
+    pub(crate) fn dismiss_top_overlay(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        if self.close_palette_only(window, cx) { return true; }
+        if self.find_file_modal.update(cx, |m, cx| m.close(cx)) { self.focus_handle.focus(window, cx); return true; }
+        false
+    }
+
+    pub(crate) fn open_find_file(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        if self.palette_open { self.palette_open = false; cx.notify(); }
+        self.state.update(cx, |s, cx| s.dispatch_command(super::state::ScreenCommand::OpenFindFile, cx));
+    }
+
+    fn render_screen_body(&self, cx: &Context<Self>) -> AnyElement {
+        match self.state.read(cx).screen {
+            Screen::Projects => self.projects_view.clone().into_any_element(),
+            Screen::ProjectOverview => self.overview_view.clone().into_any_element(),
+            Screen::Repository => self.repo_view.clone().into_any_element(),
+            Screen::Pipelines => self.pipelines_view.clone().into_any_element(),
+            Screen::MergeRequests => self.mrs_view.clone().into_any_element(),
+            Screen::Branches => self.branches_view.clone().into_any_element(),
+            Screen::Tags => self.tags_view.clone().into_any_element(),
+            Screen::Commits => self.commits_view.clone().into_any_element(),
+            Screen::Issues => self.issues_view.clone().into_any_element(),
+            Screen::Todos => self.todos_view.clone().into_any_element(),
+            Screen::Releases => self.releases_view.clone().into_any_element(),
+            Screen::Schedules => self.schedules_view.clone().into_any_element(),
+            Screen::Runners => self.runners_view.clone().into_any_element(),
+            Screen::Search => self.search_view.clone().into_any_element(),
+            Screen::Console => self.console_view.clone().into_any_element(),
+            Screen::Preferences => self.preferences_view.clone().into_any_element(),
+        }
+    }
+}
+
+impl Render for AppShell {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let sidebar = render_sidebar(&self.state, cx);
+        let top_bar = render_top_bar(&self.state, window, cx);
+        let status_bar = render_status_bar(self.state.read(cx), cx);
+        let theme = cx.theme();
+        let shell_weak = cx.entity().downgrade();
+        let palette = self.palette_open.then(|| {
+            let weak = shell_weak.clone();
+            render_palette_overlay(
+                &self.command_state,
+                &self.state,
+                move |window, cx| {
+                    let _ = weak.update(cx, |this, cx| this.close_palette_only(window, cx));
+                },
+                cx,
+            )
+        });
+
+        let root = div().id("glab-app-shell").track_focus(&self.focus_handle).relative()
+            .size_full().flex().flex_col().bg(theme.background).text_color(theme.foreground);
+
+        attach_shell_actions(root, cx)
+            .child(top_bar)
+            .child(
+                div().flex_1().min_h_0().flex().flex_row().child(sidebar)
+                    .child(div().flex_1().min_w_0().min_h_0().flex().flex_col().child(self.render_screen_body(cx))),
+            )
+            .child(status_bar)
+            .child(self.find_file_modal.clone())
+            .children(palette)
+    }
+}
