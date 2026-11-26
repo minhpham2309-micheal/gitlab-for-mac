@@ -19,8 +19,6 @@ env:
   CARGO_INCREMENTAL: "0"
   ACTIONLINT_VERSION: "1.7.11"
   ACTIONLINT_SHA256: "900919a84f2229bac68ca9cd4103ea297abc35e9689ebb842c6e34a3d1b01b0a"
-  GITLEAKS_VERSION: "8.30.1"
-  GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
 
 jobs:
   changes:
@@ -29,45 +27,98 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
-      pull-requests: read
     outputs:
-      rust: ${{ steps.resolve.outputs.rust }}
-      workflows: ${{ steps.resolve.outputs.workflows }}
+      rust: ${{ steps.classify.outputs.rust }}
+      workflows: ${{ steps.classify.outputs.workflows }}
+      packaging: ${{ steps.classify.outputs.packaging }}
     steps:
-      - name: Filter changed paths
-        id: filter
-        if: github.event_name == 'pull_request'
-        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          filters: |
-            rust:
-              - 'Cargo.toml'
-              - 'Cargo.lock'
-              - 'rust-toolchain.toml'
-              - 'src/**'
-              - 'tests/**'
-              - 'assets/**'
-              - 'fonts/**'
-              - '.github/workflows/ci.yml'
-            workflows:
-              - '.github/workflows/**'
-              - '.github/scripts/**'
+          fetch-depth: 0
+          persist-credentials: false
 
-      - name: Resolve effective triggers
-        id: resolve
+      - name: Classify changed files (fail-closed docs-only denylist)
+        id: classify
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
-          RUST_CHANGED: ${{ steps.filter.outputs.rust }}
-          WORKFLOWS_CHANGED: ${{ steps.filter.outputs.workflows }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
+          set -euo pipefail
           if [[ "$EVENT_NAME" != "pull_request" ]]; then
-            echo "rust=true" >> "$GITHUB_OUTPUT"
-            echo "workflows=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "rust=${RUST_CHANGED:-false}" >> "$GITHUB_OUTPUT"
-            echo "workflows=${WORKFLOWS_CHANGED:-false}" >> "$GITHUB_OUTPUT"
+            {
+              echo "rust=true"
+              echo "workflows=true"
+              echo "packaging=true"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+
+          # Prefer the checked-out PR merge commit parents to avoid force-push races
+          # and GitHub's 3,000-file pulls.listFiles API truncation.
+          if git rev-parse --verify -q HEAD^2 >/dev/null 2>&1; then
+            diff_files=$(git -c core.quotePath=false diff --name-only HEAD^1 HEAD^2)
+          elif [[ -n "$BASE_SHA" && -n "$HEAD_SHA" ]] \
+            && git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null \
+            && git cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null; then
+            diff_files=$(git -c core.quotePath=false diff --name-only "${BASE_SHA}...${HEAD_SHA}")
+          else
+            # Fail closed if commit diff cannot be resolved.
+            {
+              echo "rust=true"
+              echo "workflows=true"
+              echo "packaging=true"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ -z "$diff_files" ]]; then
+            {
+              echo "rust=true"
+              echo "workflows=true"
+              echo "packaging=true"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          rust="false"
+          workflows="false"
+          packaging="false"
+          while IFS= read -r path; do
+            [[ -z "$path" ]] && continue
+            case "$path" in
+              .github/workflows/*|.github/actions/*|.github/scripts/*)
+                workflows="true"
+                ;;
+            esac
+            case "$path" in
+              .github/scripts/package-macos.sh|.github/scripts/notarize-macos.sh|assets/AppIcon.icns)
+                packaging="true"
+                ;;
+            esac
+            # Only pure non-build documentation files may skip the macOS Rust build.
+            # README.md and LICENSE are intentionally excluded because package-macos.sh ships them.
+            case "$path" in
+              docs/*|AGENTS.md|.github/PULL_REQUEST_TEMPLATE.md|.github/ISSUE_TEMPLATE/*)
+                ;;
+              *.md)
+                if [[ "$path" == "README.md" ]]; then
+                  rust="true"
+                fi
+                ;;
+              *)
+                rust="true"
+                ;;
+            esac
+          done <<< "$diff_files"
+
+          {
+            echo "rust=${rust}"
+            echo "workflows=${workflows}"
+            echo "packaging=${packaging}"
+          } >> "$GITHUB_OUTPUT"
 
   pr-hygiene:
     name: Hygiene & Policy
@@ -86,14 +137,28 @@ jobs:
       - name: Run repository hygiene and architecture audit
         shell: bash
         env:
+          EVENT_NAME: ${{ github.event_name }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: .github/scripts/check-repo-hygiene.sh
+        run: |
+          set -euo pipefail
+          commit_range=""
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            if git rev-parse --verify -q HEAD^2 >/dev/null 2>&1; then
+              commit_range="HEAD^1..HEAD^2"
+            elif [[ -n "$BASE_SHA" && -n "$HEAD_SHA" ]]; then
+              commit_range="${BASE_SHA}..${HEAD_SHA}"
+            else
+              echo "::error::Unable to resolve PR commit range (fail-closed)."
+              exit 1
+            fi
+          fi
+          COMMIT_RANGE="$commit_range" .github/scripts/check-repo-hygiene.sh
 
-      - name: Lint shell scripts with ShellCheck
+      - name: Lint all shell scripts recursively with ShellCheck
         if: needs.changes.outputs.workflows == 'true'
         shell: bash
-        run: shellcheck .github/scripts/*.sh
+        run: git -c core.quotePath=false ls-files -z '*.sh' | xargs -0 shellcheck
 
       - name: Lint GitHub Actions workflows with actionlint
         if: needs.changes.outputs.workflows == 'true'
@@ -103,7 +168,9 @@ jobs:
           tmp=$(mktemp -d)
           trap 'rm -rf "$tmp"' EXIT
           archive="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
-          curl -fsSL "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${archive}" -o "${tmp}/${archive}"
+          curl --proto '=https' --tlsv1.2 -fsSL \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${archive}" \
+            -o "${tmp}/${archive}"
           echo "${ACTIONLINT_SHA256}  ${tmp}/${archive}" | sha256sum -c -
           tar -xzf "${tmp}/${archive}" -C "$tmp" actionlint
           "${tmp}/actionlint" -color
@@ -121,34 +188,15 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Scan commits for leaked secrets (Gitleaks)
-        shell: bash
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          set -euo pipefail
-          tmp=$(mktemp -d)
-          trap 'rm -rf "$tmp"' EXIT
-          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
-          curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${archive}" -o "${tmp}/${archive}"
-          echo "${GITLEAKS_SHA256}  ${tmp}/${archive}" | sha256sum -c -
-          tar -xzf "${tmp}/${archive}" -C "$tmp" gitleaks
-          if [[ "$EVENT_NAME" == "pull_request" && -n "$BASE_SHA" && -n "$HEAD_SHA" ]]; then
-            "${tmp}/gitleaks" git --config=.gitleaks.toml --redact --verbose --log-opts="${BASE_SHA}..${HEAD_SHA}" .
-          else
-            "${tmp}/gitleaks" git --config=.gitleaks.toml --redact --verbose .
-          fi
-
-      - name: Install cargo-deny
-        uses: taiki-e/install-action@893d6ee8d714b6c7dfe2bcd94e5759e9a7958a7e # v2.90.10
+      - name: Scan commits and working tree for secrets (Gitleaks)
+        uses: ./.github/actions/gitleaks-scan
         with:
-          tool: cargo-deny
+          mode: ${{ github.event_name == 'pull_request' && 'pr' || 'full' }}
+          base-sha: ${{ github.event.pull_request.base.sha }}
+          head-sha: ${{ github.event.pull_request.head.sha }}
 
       - name: Audit advisories, licenses, bans, and sources (cargo-deny)
-        shell: bash
-        run: cargo deny --locked check
+        uses: ./.github/actions/cargo-deny-check
 
   rust-macos:
     name: macOS Build, Lint & Test
@@ -158,23 +206,23 @@ jobs:
     if: needs.changes.outputs.rust == 'true'
     permissions:
       contents: read
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "13.0"
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Setup Rust stable toolchain
+      - name: Setup pinned Rust toolchain
         uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
-        with:
-          toolchain: stable
-          components: clippy, rustfmt
 
-      - name: Cache Cargo registry and build artifacts
+      - name: Restore Cargo build cache (warmed on main)
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: macos-15-dev
-          cache-on-failure: true
+          cache-on-failure: false
+          save-if: ${{ github.event_name == 'merge_group' || github.ref == 'refs/heads/main' }}
 
       - name: Verify Rust and Xcode toolchain
         shell: bash
@@ -183,7 +231,11 @@ jobs:
           cargo --version
           xcodebuild -version
 
-      - name: Check Cargo.lock sync and Clippy lints
+      - name: Check production targets without dev-dependency feature leakage
+        shell: bash
+        run: cargo clippy --locked --lib --bins -- -D warnings
+
+      - name: Check all targets including tests with Clippy
         shell: bash
         run: cargo clippy --locked --all-targets -- -D warnings
 
@@ -197,6 +249,26 @@ jobs:
           RUSTDOCFLAGS: "-D warnings"
         run: cargo doc --locked --no-deps
 
+      - name: Smoke-test compiled binary startup (--version)
+        shell: bash
+        run: cargo run --locked -- --version
+
+      - name: Smoke-test macOS packaging script when modified
+        if: needs.changes.outputs.packaging == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          tmp_dist=$(mktemp -d)
+          trap 'rm -rf "$tmp_dist"' EXIT
+          .github/scripts/package-macos.sh \
+            --binary target/debug/gitlab-for-mac \
+            --version 0.1.0-smoke \
+            --tag smoke \
+            --arch arm64 \
+            --target aarch64-apple-darwin \
+            --build-number 1 \
+            --out-dir "$tmp_dist"
+
       - name: Publish macOS verification summary
         if: always()
         shell: bash
@@ -206,7 +278,8 @@ jobs:
             echo ""
             echo "- **Runner:** \`macos-15\` (\`$(uname -m)\`)"
             echo "- **Rust:** \`$(rustc --version)\`"
-            echo "- **Checks:** \`cargo clippy --locked --all-targets -- -D warnings\`, \`cargo test --locked\`, \`cargo doc --locked --no-deps\`"
+            echo "- **Deployment Target:** macOS \`${MACOSX_DEPLOYMENT_TARGET}\`"
+            echo "- **Checks:** \`clippy --lib --bins\`, \`clippy --all-targets\`, \`cargo test --locked\`, \`cargo doc --no-deps\`, \`--version\` smoke test"
           } >> "$GITHUB_STEP_SUMMARY"
 
   ci-gate:
@@ -214,12 +287,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     needs: [changes, pr-hygiene, security, rust-macos]
-    if: always()
+    if: always() && !cancelled()
     permissions: {}
     steps:
       - name: Evaluate required job outcomes
         shell: bash
         env:
+          RUST_CHANGED: ${{ needs.changes.outputs.rust }}
           CHANGES_RESULT: ${{ needs.changes.result }}
           HYGIENE_RESULT: ${{ needs.pr-hygiene.result }}
           SECURITY_RESULT: ${{ needs.security.result }}
@@ -234,7 +308,7 @@ jobs:
             echo "| Detect Changes | \`${CHANGES_RESULT}\` |"
             echo "| Hygiene & Policy | \`${HYGIENE_RESULT}\` |"
             echo "| Security & Supply Chain | \`${SECURITY_RESULT}\` |"
-            echo "| macOS Build, Lint & Test | \`${MACOS_RESULT}\` |"
+            echo "| macOS Build, Lint & Test | \`${MACOS_RESULT}\` (rust=${RUST_CHANGED}) |"
           } >> "$GITHUB_STEP_SUMMARY"
 
           for pair in \
@@ -249,7 +323,12 @@ jobs:
             fi
           done
 
-          if [[ "$MACOS_RESULT" != "success" && "$MACOS_RESULT" != "skipped" ]]; then
+          if [[ "$RUST_CHANGED" == "true" ]]; then
+            if [[ "$MACOS_RESULT" != "success" ]]; then
+              echo "::error::Rust changes detected but 'rust-macos' finished with status '${MACOS_RESULT}'."
+              exit 1
+            fi
+          elif [[ "$MACOS_RESULT" != "success" && "$MACOS_RESULT" != "skipped" ]]; then
             echo "::error::Job 'rust-macos' finished with status '${MACOS_RESULT}'."
             exit 1
           fi

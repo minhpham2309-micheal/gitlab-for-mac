@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       publish_canary:
-        description: "Update the rolling canary GitHub Pre-release"
+        description: "Update the rolling canary GitHub Pre-release (main branch only)"
         type: boolean
         default: true
 
@@ -19,91 +19,85 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
-  GITLEAKS_VERSION: "8.30.1"
-  GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
 
 jobs:
-  security-main:
-    name: Security & Hygiene (main)
+  guard-and-security:
+    name: Branch Guard, Hygiene & Security (main)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
     steps:
+      - name: Enforce main-branch-only execution
+        shell: bash
+        env:
+          CURRENT_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          if [[ "$CURRENT_REF" != "refs/heads/main" ]]; then
+            echo "::error::Post-Merge CD may only run on refs/heads/main (got '${CURRENT_REF}')."
+            exit 1
+          fi
+
       - name: Checkout main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Run repository hygiene audit
+      - name: Run repository hygiene and merged-commit audit
         shell: bash
-        run: .github/scripts/check-repo-hygiene.sh
-
-      - name: Scan repository for leaked secrets (Gitleaks)
-        shell: bash
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          tmp=$(mktemp -d)
-          trap 'rm -rf "$tmp"' EXIT
-          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
-          curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${archive}" -o "${tmp}/${archive}"
-          echo "${GITLEAKS_SHA256}  ${tmp}/${archive}" | sha256sum -c -
-          tar -xzf "${tmp}/${archive}" -C "$tmp" gitleaks
-          "${tmp}/gitleaks" git --config=.gitleaks.toml --redact .
+          commit_range=""
+          if [[ -n "$BEFORE_SHA" && "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]] \
+            && git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
+            commit_range="${BEFORE_SHA}..${AFTER_SHA}"
+          fi
+          COMMIT_RANGE="$commit_range" .github/scripts/check-repo-hygiene.sh
 
-      - name: Install cargo-deny
-        uses: taiki-e/install-action@893d6ee8d714b6c7dfe2bcd94e5759e9a7958a7e # v2.90.10
+      - name: Scan repository for leaked secrets (Gitleaks)
+        uses: ./.github/actions/gitleaks-scan
         with:
-          tool: cargo-deny
+          mode: full
 
-      - name: Run cargo-deny audit
-        shell: bash
-        run: cargo deny --locked check
+      - name: Audit dependencies (cargo-deny)
+        uses: ./.github/actions/cargo-deny-check
 
-  build-and-package:
-    name: Verify & Package macOS Canary (arm64)
+  verify-main:
+    name: Verify main & Warm PR Cache (macos-15)
+    needs: [guard-and-security]
     runs-on: macos-15
-    timeout-minutes: 45
+    timeout-minutes: 25
     permissions:
       contents: read
-    outputs:
-      crate_version: ${{ steps.meta.outputs.crate_version }}
-      canary_version: ${{ steps.meta.outputs.canary_version }}
-      short_sha: ${{ steps.meta.outputs.short_sha }}
-      binary_size_mb: ${{ steps.metrics.outputs.binary_size_mb }}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "13.0"
     steps:
       - name: Checkout main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Setup Rust stable toolchain
+      - name: Setup pinned Rust toolchain with Intel cross-check target
         uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
-          toolchain: stable
-          components: clippy
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
 
-      - name: Cache Cargo registry and release build artifacts
+      - name: Warm shared macOS dev cache for PRs
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          shared-key: macos-15-main-release
-          cache-on-failure: true
+          shared-key: macos-15-dev
+          cache-on-failure: false
 
-      - name: Extract crate metadata
-        id: meta
+      - name: Check production targets without dev-dependency leakage
         shell: bash
-        run: |
-          set -euo pipefail
-          crate_version=$(awk -F'"' '/^version = "/ { print $2; exit }' Cargo.toml)
-          short_sha="${GITHUB_SHA:0:7}"
-          {
-            echo "crate_version=${crate_version}"
-            echo "short_sha=${short_sha}"
-            echo "canary_version=${crate_version}-canary.${short_sha}"
-          } >> "$GITHUB_OUTPUT"
+        run: cargo clippy --locked --lib --bins -- -D warnings
 
-      - name: Verify Clippy lints on merged main
+      - name: Check all targets with Clippy
         shell: bash
         run: cargo clippy --locked --all-targets -- -D warnings
 
@@ -111,81 +105,144 @@ jobs:
         shell: bash
         run: cargo test --locked
 
-      - name: Verify Rustdoc on merged main
+      - name: Verify Rustdoc builds cleanly
         shell: bash
         env:
           RUSTDOCFLAGS: "-D warnings"
         run: cargo doc --locked --no-deps
 
-      - name: Build optimized LTO release binary (aarch64-apple-darwin)
+      - name: Cross-check Intel macOS target compilation
         shell: bash
-        run: cargo build --release --locked --target aarch64-apple-darwin
+        run: cargo check --locked --target x86_64-apple-darwin
 
-      - name: Record release binary metrics
-        id: metrics
+  build-canary:
+    name: Build Hermetic Canary Binary (arm64, no secrets)
+    needs: [guard-and-security, verify-main]
+    runs-on: macos-15
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    outputs:
+      crate_version: ${{ steps.build.outputs.crate-version }}
+      canary_version: ${{ steps.meta.outputs.canary_version }}
+      short_sha: ${{ steps.meta.outputs.short_sha }}
+      binary_sha256: ${{ steps.build.outputs.binary-sha256 }}
+      binary_size_mb: ${{ steps.build.outputs.binary-size-mb }}
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build LTO release binary (isolated from signing secrets)
+        id: build
+        uses: ./.github/actions/rust-release-build
+        with:
+          target: aarch64-apple-darwin
+          run-verify: "false"
+
+      - name: Derive canary metadata
+        id: meta
         shell: bash
+        env:
+          CRATE_VERSION: ${{ steps.build.outputs.crate-version }}
         run: |
           set -euo pipefail
-          bin="target/aarch64-apple-darwin/release/gitlab-for-mac"
-          bytes=$(stat -f%z "$bin")
-          mb=$(awk -v b="$bytes" 'BEGIN { printf "%.2f", b / 1048576 }')
-          echo "binary_size_mb=${mb}" >> "$GITHUB_OUTPUT"
+          short_sha="${GITHUB_SHA:0:7}"
           {
-            echo "### Release Binary Metrics"
-            echo ""
-            echo "- **Target:** \`aarch64-apple-darwin\`"
-            echo "- **Binary Size (LTO + stripped):** ${mb} MB (${bytes} bytes)"
-            echo "- **Commit:** \`${GITHUB_SHA}\`"
-          } >> "$GITHUB_STEP_SUMMARY"
+            echo "short_sha=${short_sha}"
+            echo "canary_version=${CRATE_VERSION}-canary.${short_sha}"
+          } >> "$GITHUB_OUTPUT"
 
-      - name: Import Apple Developer certificate (if configured)
+      - name: Upload unsigned binary for isolated signing job
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: unsigned-canary-arm64
+          path: target/aarch64-apple-darwin/release/gitlab-for-mac
+          retention-days: 1
+          if-no-files-found: error
+
+  sign-and-package-canary:
+    name: Sign & Package Canary (arm64, zero cargo)
+    needs: [build-canary]
+    if: github.ref == 'refs/heads/main'
+    runs-on: macos-15
+    timeout-minutes: 25
+    # Uncomment once repo is public or on GitHub Pro/Team to scope signing secrets to a protected environment:
+    # environment: canary
+    permissions:
+      contents: read
+    outputs:
+      checksums_sha256: ${{ steps.digest.outputs.checksums_sha256 }}
+    steps:
+      - name: Checkout trusted packaging scripts and assets
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download unsigned binary artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: unsigned-canary-arm64
+          path: unsigned
+
+      - name: Verify downloaded binary SHA-256 against build job output
         shell: bash
         env:
-          MACOS_CERT_P12_BASE64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
-          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          EXPECTED_SHA256: ${{ needs.build-canary.outputs.binary_sha256 }}
         run: |
           set -euo pipefail
-          if [[ -z "$MACOS_CERT_P12_BASE64" || -z "$MACOS_CERT_PASSWORD" ]]; then
-            echo "No Developer ID certificate configured; proceeding with ad-hoc signing."
-            exit 0
+          chmod 755 unsigned/gitlab-for-mac
+          actual=$(shasum -a 256 unsigned/gitlab-for-mac | awk '{print $1}')
+          if [[ "$actual" != "$EXPECTED_SHA256" ]]; then
+            echo "::error::Binary digest mismatch (expected ${EXPECTED_SHA256}, got ${actual})."
+            exit 1
           fi
-          keychain="${RUNNER_TEMP}/app-signing.keychain-db"
-          cert_file="${RUNNER_TEMP}/signing-cert.p12"
-          kc_pass=$(openssl rand -hex 24)
-          echo "$MACOS_CERT_P12_BASE64" | base64 --decode > "$cert_file"
-          security create-keychain -p "$kc_pass" "$keychain"
-          security set-keychain-settings -lut 21600 "$keychain"
-          security unlock-keychain -p "$kc_pass" "$keychain"
-          security import "$cert_file" -P "$MACOS_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
-          security set-key-partition-list -S apple-tool:,apple: -k "$kc_pass" "$keychain"
-          security list-keychain -d user -s "$keychain"
-          rm -f "$cert_file"
 
-      - name: Package macOS .app, .dmg, and CLI archive
+      - name: Provision temporary Apple signing keychain (if configured)
+        uses: ./.github/actions/macos-signing-keychain
+        with:
+          mode: setup
+          require-signing: "false"
+          cert-p12-base64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
+          cert-password: ${{ secrets.MACOS_CERT_PASSWORD }}
+          signing-identity: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+
+      - name: Package signed macOS .app, .dmg, and CLI archive
         shell: bash
         env:
-          CANARY_VERSION: ${{ steps.meta.outputs.canary_version }}
+          MACOSX_DEPLOYMENT_TARGET: "13.0"
+          CANARY_VERSION: ${{ needs.build-canary.outputs.canary_version }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_KEY_P8_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         run: |
           .github/scripts/package-macos.sh \
-            --binary target/aarch64-apple-darwin/release/gitlab-for-mac \
+            --binary unsigned/gitlab-for-mac \
             --version "$CANARY_VERSION" \
             --tag canary \
             --arch arm64 \
             --target aarch64-apple-darwin \
+            --build-number "$GITHUB_RUN_NUMBER" \
             --out-dir dist
 
       - name: Clean up temporary signing keychain
         if: always()
+        uses: ./.github/actions/macos-signing-keychain
+        with:
+          mode: cleanup
+
+      - name: Record immutable checksums manifest digest
+        id: digest
         shell: bash
         run: |
-          if [[ -f "${RUNNER_TEMP}/app-signing.keychain-db" ]]; then
-            security delete-keychain "${RUNNER_TEMP}/app-signing.keychain-db" 2>/dev/null || true
-          fi
-          rm -f "${RUNNER_TEMP}/signing-cert.p12"
+          set -euo pipefail
+          sum=$(shasum -a 256 dist/SHA256SUMS-arm64.txt | awk '{print $1}')
+          echo "checksums_sha256=${sum}" >> "$GITHUB_OUTPUT"
 
       - name: Upload packaged canary artifacts
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -199,8 +256,10 @@ jobs:
     name: Publish Rolling Canary Pre-release
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: [security-main, build-and-package]
-    if: github.event_name == 'push' || inputs.publish_canary == true
+    needs: [build-canary, sign-and-package-canary]
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || inputs.publish_canary == true)
+    # Uncomment once repo is public or on GitHub Pro/Team:
+    # environment: canary
     permissions:
       contents: write
       id-token: write
@@ -212,14 +271,35 @@ jobs:
           name: gitlab-for-mac-canary-arm64
           path: dist
 
-      - name: Finalize SHA256SUMS.txt
+      - name: Verify checksum manifest against sign job output
         shell: bash
+        env:
+          EXPECTED_SUM: ${{ needs.sign-and-package-canary.outputs.checksums_sha256 }}
         run: |
           set -euo pipefail
           cd dist
+          actual=$(sha256sum SHA256SUMS-arm64.txt | awk '{print $1}')
+          if [[ "$actual" != "$EXPECTED_SUM" ]]; then
+            echo "::error::SHA256SUMS-arm64.txt digest mismatch."
+            exit 1
+          fi
           cp SHA256SUMS-arm64.txt SHA256SUMS.txt
           rm -f SHA256SUMS-arm64.txt
           sha256sum -c SHA256SUMS.txt
+
+      - name: Guard against rolling canary downgrade
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TARGET_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          main_tip=$(gh api "repos/${REPO}/git/ref/heads/main" --jq '.object.sha')
+          if [[ "$main_tip" != "$TARGET_SHA" ]]; then
+            echo "::error::Refusing to publish canary for stale commit ${TARGET_SHA}; main tip is ${main_tip}."
+            exit 1
+          fi
 
       - name: Generate SLSA build provenance attestation
         if: github.event.repository.visibility == 'public' || vars.ENABLE_ATTESTATIONS == 'true'
@@ -230,7 +310,7 @@ jobs:
             dist/*.dmg
             dist/*.tar.gz
 
-      - name: Point rolling canary tag to merged commit
+      - name: Point rolling canary tag to verified main tip
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -238,7 +318,9 @@ jobs:
           TARGET_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          if gh api "repos/${REPO}/git/ref/tags/canary" >/dev/null 2>&1; then
+          ref_state=$(gh api "repos/${REPO}/git/ref/tags/canary" \
+            --jq 'if type == "object" and .ref == "refs/tags/canary" then "exists" else "missing" end' 2>/dev/null || echo "missing")
+          if [[ "$ref_state" == "exists" ]]; then
             gh api -X PATCH "repos/${REPO}/git/refs/tags/canary" \
               -f sha="${TARGET_SHA}" \
               -F force=true >/dev/null
@@ -251,18 +333,18 @@ jobs:
       - name: Prepare canary release notes
         shell: bash
         env:
-          CANARY_VERSION: ${{ needs.build-and-package.outputs.canary_version }}
-          SHORT_SHA: ${{ needs.build-and-package.outputs.short_sha }}
-          BINARY_SIZE_MB: ${{ needs.build-and-package.outputs.binary_size_mb }}
+          CANARY_VERSION: ${{ needs.build-canary.outputs.canary_version }}
+          SHORT_SHA: ${{ needs.build-canary.outputs.short_sha }}
+          BINARY_SIZE_MB: ${{ needs.build-canary.outputs.binary_size_mb }}
         run: |
           cat > release-notes.md <<EOF
           ## Rolling Canary Build (\`${CANARY_VERSION}\`)
 
           Automated post-merge build from \`main\` commit \`${GITHUB_SHA}\` (\`${SHORT_SHA}\`).
 
-          - **Architecture:** Apple Silicon (\`aarch64-apple-darwin\`)
+          - **Architecture:** Apple Silicon (\`aarch64-apple-darwin\`, macOS 13.0+)
           - **Stripped LTO Binary Size:** ${BINARY_SIZE_MB} MB
-          - **Verification:** \`cargo clippy --locked --all-targets -- -D warnings\`, \`cargo test --locked\`, \`cargo doc\`, \`cargo-deny\`, \`gitleaks\`
+          - **Verification:** \`clippy --lib --bins\`, \`clippy --all-targets\`, \`cargo test --locked\`, \`cargo doc\`, Intel cross-check, \`cargo-deny\`, \`gitleaks\`
 
           ### SHA-256 Checksums
           \`\`\`text
@@ -274,7 +356,8 @@ jobs:
         uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           tag_name: canary
-          name: "GitLab for Mac Canary (${{ needs.build-and-package.outputs.short_sha }})"
+          target_commitish: ${{ github.sha }}
+          name: "GitLab for Mac Canary (${{ needs.build-canary.outputs.short_sha }})"
           prerelease: true
           make_latest: "false"
           body_path: release-notes.md

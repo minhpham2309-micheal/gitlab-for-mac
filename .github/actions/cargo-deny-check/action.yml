@@ -1,0 +1,18 @@
+name: Cargo Deny Supply-Chain Audit
+description: Sets up pinned Rust toolchain and pinned cargo-deny, then audits advisories, licenses, bans, and sources.
+
+runs:
+  using: composite
+  steps:
+    - name: Setup pinned Rust toolchain
+      uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
+
+    - name: Install pinned cargo-deny
+      uses: taiki-e/install-action@893d6ee8d714b6c7dfe2bcd94e5759e9a7958a7e # v2.90.10
+      with:
+        tool: cargo-deny@0.22.1
+        fallback: none
+
+    - name: Audit advisories, licenses, bans, and sources
+      shell: bash
+      run: cargo deny --locked check

@@ -1,0 +1,10 @@
+# Require owner review for CI/CD, supply-chain, build, and policy files.
+/.github/ @minhpham2309-micheal
+/.gitleaks.toml @minhpham2309-micheal
+/deny.toml @minhpham2309-micheal
+/rust-toolchain.toml @minhpham2309-micheal
+/Cargo.toml @minhpham2309-micheal
+/Cargo.lock @minhpham2309-micheal
+/.cargo/ @minhpham2309-micheal
+/build.rs @minhpham2309-micheal
+/AGENTS.md @minhpham2309-micheal

@@ -7,18 +7,14 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "SemVer tag matching Cargo.toml (e.g. v0.1.0)"
+        description: "SemVer tag matching Cargo.toml on main (publishes as draft only)"
         required: true
         type: string
-      draft:
-        description: "Publish as draft GitHub Release"
-        type: boolean
-        default: true
 
 permissions: {}
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 env:
@@ -27,7 +23,7 @@ env:
 
 jobs:
   validate-release:
-    name: Validate Release Tag & Policy
+    name: Validate Release Tag, Ancestry & Security
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -36,156 +32,340 @@ jobs:
       tag: ${{ steps.meta.outputs.tag }}
       version: ${{ steps.meta.outputs.version }}
       prerelease: ${{ steps.meta.outputs.prerelease }}
+      is_draft: ${{ steps.meta.outputs.is_draft }}
     steps:
-      - name: Checkout repository
+      - name: Checkout repository with full history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
 
-      - name: Verify release tag matches Cargo.toml
+      - name: Setup pinned Rust toolchain for metadata extraction
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
+
+      - name: Enforce release ref, ancestry, SemVer, and immutability rules
         id: meta
         shell: bash
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
           EVENT_NAME: ${{ github.event_name }}
-          INPUT_TAG: ${{ inputs.tag }}
+          CURRENT_REF: ${{ github.ref }}
           REF_NAME: ${{ github.ref_name }}
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          tag="$REF_NAME"
+          is_draft="false"
           if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            if [[ "$CURRENT_REF" != "refs/heads/main" ]]; then
+              echo "::error::workflow_dispatch releases must run from refs/heads/main (got '${CURRENT_REF}')."
+              exit 1
+            fi
             tag="$INPUT_TAG"
+            is_draft="true"
+          else
+            tag="$REF_NAME"
+            git fetch origin main --depth=0 >/dev/null 2>&1 || true
+            if ! git merge-base --is-ancestor HEAD origin/main; then
+              echo "::error::Release tag '${tag}' (${GITHUB_SHA}) is not an ancestor of origin/main."
+              exit 1
+            fi
           fi
+
           if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
             echo "::error::Tag '${tag}' does not match SemVer format vX.Y.Z[-prerelease]."
             exit 1
           fi
+
           version="${tag#v}"
-          crate_version=$(awk -F'"' '/^version = "/ { print $2; exit }' Cargo.toml)
+          crate_version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
           if [[ "$version" != "$crate_version" ]]; then
             echo "::error::Tag version (${version}) does not match Cargo.toml version (${crate_version})."
             exit 1
           fi
+
+          # Block overwriting an already-published immutable release.
+          existing_state=$(gh api "repos/${REPO}/releases/tags/${tag}" \
+            --jq 'if .draft == false then "published" else "draft" end' 2>/dev/null || echo "none")
+          if [[ "$existing_state" == "published" ]]; then
+            echo "::error::Refusing to overwrite already-published GitHub Release '${tag}'."
+            exit 1
+          fi
+
           prerelease="false"
           if [[ "$version" == *-* ]]; then
             prerelease="true"
           fi
+
           {
             echo "tag=${tag}"
             echo "version=${version}"
             echo "prerelease=${prerelease}"
+            echo "is_draft=${is_draft}"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Install cargo-deny
-        uses: taiki-e/install-action@893d6ee8d714b6c7dfe2bcd94e5759e9a7958a7e # v2.90.10
-        with:
-          tool: cargo-deny
-
-      - name: Audit dependencies before release
+      - name: Run repository hygiene audit
         shell: bash
-        run: cargo deny --locked check
+        run: .github/scripts/check-repo-hygiene.sh
 
-  build-release:
-    name: Build macOS (${{ matrix.arch }})
+      - name: Scan repository for leaked secrets (Gitleaks)
+        uses: ./.github/actions/gitleaks-scan
+        with:
+          mode: full
+
+      - name: Audit dependencies before release (cargo-deny)
+        uses: ./.github/actions/cargo-deny-check
+
+  build-arm64:
+    name: Build Hermetic Release (arm64, no secrets)
     needs: [validate-release]
-    runs-on: ${{ matrix.runner }}
+    runs-on: macos-15
     timeout-minutes: 45
     permissions:
       contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: arm64
-            target: aarch64-apple-darwin
-            runner: macos-15
-          - arch: x86_64
-            target: x86_64-apple-darwin
-            runner: macos-15-intel
+    outputs:
+      binary_sha256: ${{ steps.build.outputs.binary-sha256 }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Setup Rust stable toolchain
-        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
+      - name: Build verified arm64 release binary
+        id: build
+        uses: ./.github/actions/rust-release-build
         with:
-          toolchain: stable
-          targets: ${{ matrix.target }}
-          components: clippy
+          target: aarch64-apple-darwin
+          run-verify: "true"
 
-      - name: Cache Cargo registry and release target
-        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Upload unsigned arm64 binary
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          shared-key: release-${{ matrix.target }}
-          cache-on-failure: true
+          name: unsigned-release-arm64
+          path: target/aarch64-apple-darwin/release/gitlab-for-mac
+          retention-days: 1
+          if-no-files-found: error
 
-      - name: Verify Clippy and Tests on ${{ matrix.arch }}
-        shell: bash
-        run: |
-          cargo clippy --locked --all-targets -- -D warnings
-          cargo test --locked
+  build-x86_64:
+    name: Build Hermetic Release (x86_64, no secrets)
+    needs: [validate-release]
+    runs-on: macos-15-intel
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    outputs:
+      binary_sha256: ${{ steps.build.outputs.binary-sha256 }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - name: Build LTO release binary (${{ matrix.target }})
-        shell: bash
-        run: cargo build --release --locked --target "${{ matrix.target }}"
+      - name: Build verified x86_64 release binary
+        id: build
+        uses: ./.github/actions/rust-release-build
+        with:
+          target: x86_64-apple-darwin
+          run-verify: "true"
 
-      - name: Import Apple Developer certificate (if configured)
+      - name: Upload unsigned x86_64 binary
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: unsigned-release-x86_64
+          path: target/x86_64-apple-darwin/release/gitlab-for-mac
+          retention-days: 1
+          if-no-files-found: error
+
+  sign-arm64:
+    name: Sign & Package Release (arm64, zero cargo)
+    needs: [validate-release, build-arm64]
+    runs-on: macos-15
+    timeout-minutes: 25
+    # Uncomment once repo is public or on GitHub Pro/Team to scope release signing secrets & reviewers:
+    # environment: release
+    permissions:
+      contents: read
+    outputs:
+      checksums_sha256: ${{ steps.digest.outputs.checksums_sha256 }}
+    steps:
+      - name: Checkout packaging scripts and assets
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download unsigned arm64 binary
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: unsigned-release-arm64
+          path: unsigned
+
+      - name: Verify arm64 binary SHA-256 against build job output
         shell: bash
         env:
-          MACOS_CERT_P12_BASE64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
-          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          EXPECTED_SHA256: ${{ needs.build-arm64.outputs.binary_sha256 }}
         run: |
           set -euo pipefail
-          if [[ -z "$MACOS_CERT_P12_BASE64" || -z "$MACOS_CERT_PASSWORD" ]]; then
-            echo "No Developer ID certificate configured; proceeding with ad-hoc signing."
-            exit 0
+          chmod 755 unsigned/gitlab-for-mac
+          actual=$(shasum -a 256 unsigned/gitlab-for-mac | awk '{print $1}')
+          if [[ "$actual" != "$EXPECTED_SHA256" ]]; then
+            echo "::error::arm64 binary digest mismatch (expected ${EXPECTED_SHA256}, got ${actual})."
+            exit 1
           fi
-          keychain="${RUNNER_TEMP}/app-signing.keychain-db"
-          cert_file="${RUNNER_TEMP}/signing-cert.p12"
-          kc_pass=$(openssl rand -hex 24)
-          echo "$MACOS_CERT_P12_BASE64" | base64 --decode > "$cert_file"
-          security create-keychain -p "$kc_pass" "$keychain"
-          security set-keychain-settings -lut 21600 "$keychain"
-          security unlock-keychain -p "$kc_pass" "$keychain"
-          security import "$cert_file" -P "$MACOS_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
-          security set-key-partition-list -S apple-tool:,apple: -k "$kc_pass" "$keychain"
-          security list-keychain -d user -s "$keychain"
-          rm -f "$cert_file"
 
-      - name: Package macOS release artifacts (${{ matrix.arch }})
+      - name: Provision Apple signing keychain
+        uses: ./.github/actions/macos-signing-keychain
+        with:
+          mode: setup
+          require-signing: ${{ vars.REQUIRE_MACOS_SIGNING == 'true' }}
+          cert-p12-base64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
+          cert-password: ${{ secrets.MACOS_CERT_PASSWORD }}
+          signing-identity: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+
+      - name: Package signed arm64 artifacts
         shell: bash
         env:
+          MACOSX_DEPLOYMENT_TARGET: "13.0"
           REL_VERSION: ${{ needs.validate-release.outputs.version }}
           REL_TAG: ${{ needs.validate-release.outputs.tag }}
-          REL_ARCH: ${{ matrix.arch }}
-          REL_TARGET: ${{ matrix.target }}
+          REQUIRE_SIGNING: ${{ vars.REQUIRE_MACOS_SIGNING == 'true' }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_KEY_P8_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         run: |
+          set -euo pipefail
+          extra_args=()
+          if [[ "$REQUIRE_SIGNING" == "true" ]]; then
+            extra_args+=(--require-signing)
+          fi
           .github/scripts/package-macos.sh \
-            --binary "target/${REL_TARGET}/release/gitlab-for-mac" \
+            --binary unsigned/gitlab-for-mac \
             --version "$REL_VERSION" \
             --tag "$REL_TAG" \
-            --arch "$REL_ARCH" \
-            --target "$REL_TARGET" \
-            --out-dir dist
+            --arch arm64 \
+            --target aarch64-apple-darwin \
+            --build-number "$GITHUB_RUN_NUMBER" \
+            --out-dir dist \
+            "${extra_args[@]}"
 
       - name: Clean up temporary signing keychain
         if: always()
+        uses: ./.github/actions/macos-signing-keychain
+        with:
+          mode: cleanup
+
+      - name: Record immutable arm64 checksums manifest digest
+        id: digest
         shell: bash
         run: |
-          if [[ -f "${RUNNER_TEMP}/app-signing.keychain-db" ]]; then
-            security delete-keychain "${RUNNER_TEMP}/app-signing.keychain-db" 2>/dev/null || true
-          fi
-          rm -f "${RUNNER_TEMP}/signing-cert.p12"
+          set -euo pipefail
+          sum=$(shasum -a 256 dist/SHA256SUMS-arm64.txt | awk '{print $1}')
+          echo "checksums_sha256=${sum}" >> "$GITHUB_OUTPUT"
 
-      - name: Upload release artifacts (${{ matrix.arch }})
+      - name: Upload signed arm64 release artifacts
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: release-${{ matrix.arch }}
+          name: release-arm64
+          path: dist/*
+          retention-days: 7
+          if-no-files-found: error
+
+  sign-x86_64:
+    name: Sign & Package Release (x86_64, zero cargo)
+    needs: [validate-release, build-x86_64]
+    runs-on: macos-15-intel
+    timeout-minutes: 25
+    # Uncomment once repo is public or on GitHub Pro/Team:
+    # environment: release
+    permissions:
+      contents: read
+    outputs:
+      checksums_sha256: ${{ steps.digest.outputs.checksums_sha256 }}
+    steps:
+      - name: Checkout packaging scripts and assets
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download unsigned x86_64 binary
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: unsigned-release-x86_64
+          path: unsigned
+
+      - name: Verify x86_64 binary SHA-256 against build job output
+        shell: bash
+        env:
+          EXPECTED_SHA256: ${{ needs.build-x86_64.outputs.binary_sha256 }}
+        run: |
+          set -euo pipefail
+          chmod 755 unsigned/gitlab-for-mac
+          actual=$(shasum -a 256 unsigned/gitlab-for-mac | awk '{print $1}')
+          if [[ "$actual" != "$EXPECTED_SHA256" ]]; then
+            echo "::error::x86_64 binary digest mismatch (expected ${EXPECTED_SHA256}, got ${actual})."
+            exit 1
+          fi
+
+      - name: Provision Apple signing keychain
+        uses: ./.github/actions/macos-signing-keychain
+        with:
+          mode: setup
+          require-signing: ${{ vars.REQUIRE_MACOS_SIGNING == 'true' }}
+          cert-p12-base64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
+          cert-password: ${{ secrets.MACOS_CERT_PASSWORD }}
+          signing-identity: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+
+      - name: Package signed x86_64 artifacts
+        shell: bash
+        env:
+          MACOSX_DEPLOYMENT_TARGET: "13.0"
+          REL_VERSION: ${{ needs.validate-release.outputs.version }}
+          REL_TAG: ${{ needs.validate-release.outputs.tag }}
+          REQUIRE_SIGNING: ${{ vars.REQUIRE_MACOS_SIGNING == 'true' }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_KEY_P8_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          set -euo pipefail
+          extra_args=()
+          if [[ "$REQUIRE_SIGNING" == "true" ]]; then
+            extra_args+=(--require-signing)
+          fi
+          .github/scripts/package-macos.sh \
+            --binary unsigned/gitlab-for-mac \
+            --version "$REL_VERSION" \
+            --tag "$REL_TAG" \
+            --arch x86_64 \
+            --target x86_64-apple-darwin \
+            --build-number "$GITHUB_RUN_NUMBER" \
+            --out-dir dist \
+            "${extra_args[@]}"
+
+      - name: Clean up temporary signing keychain
+        if: always()
+        uses: ./.github/actions/macos-signing-keychain
+        with:
+          mode: cleanup
+
+      - name: Record immutable x86_64 checksums manifest digest
+        id: digest
+        shell: bash
+        run: |
+          set -euo pipefail
+          sum=$(shasum -a 256 dist/SHA256SUMS-x86_64.txt | awk '{print $1}')
+          echo "checksums_sha256=${sum}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload signed x86_64 release artifacts
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-x86_64
           path: dist/*
           retention-days: 7
           if-no-files-found: error
@@ -194,7 +374,9 @@ jobs:
     name: Publish GitHub Release
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: [validate-release, build-release]
+    needs: [validate-release, sign-arm64, sign-x86_64]
+    # Uncomment once repo is public or on GitHub Pro/Team:
+    # environment: release
     permissions:
       contents: write
       id-token: write
@@ -207,13 +389,26 @@ jobs:
           merge-multiple: true
           path: dist
 
-      - name: Combine and verify SHA256SUMS.txt
+      - name: Verify both architecture manifests against immutable sign outputs
         shell: bash
+        env:
+          EXPECTED_ARM64: ${{ needs.sign-arm64.outputs.checksums_sha256 }}
+          EXPECTED_X64: ${{ needs.sign-x86_64.outputs.checksums_sha256 }}
         run: |
           set -euo pipefail
           cd dist
-          cat SHA256SUMS-*.txt | sort -k2 > SHA256SUMS.txt
-          rm -f SHA256SUMS-*.txt
+          [[ -f SHA256SUMS-arm64.txt && -f SHA256SUMS-x86_64.txt ]] || {
+            echo "::error::Missing expected architecture checksum manifests."
+            exit 1
+          }
+          actual_arm64=$(sha256sum SHA256SUMS-arm64.txt | awk '{print $1}')
+          actual_x64=$(sha256sum SHA256SUMS-x86_64.txt | awk '{print $1}')
+          if [[ "$actual_arm64" != "$EXPECTED_ARM64" || "$actual_x64" != "$EXPECTED_X64" ]]; then
+            echo "::error::Checksum manifest digest verification failed."
+            exit 1
+          fi
+          cat SHA256SUMS-arm64.txt SHA256SUMS-x86_64.txt | sort -k2 > SHA256SUMS.txt
+          rm -f SHA256SUMS-arm64.txt SHA256SUMS-x86_64.txt
           sha256sum -c SHA256SUMS.txt
 
       - name: Generate SLSA build provenance attestation
@@ -225,16 +420,29 @@ jobs:
             dist/*.dmg
             dist/*.tar.gz
 
+      - name: Prepare release checksums header
+        shell: bash
+        run: |
+          cat > release-header.md <<EOF
+          ### SHA-256 Checksums
+          \`\`\`text
+          $(cat dist/SHA256SUMS.txt)
+          \`\`\`
+          EOF
+
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           tag_name: ${{ needs.validate-release.outputs.tag }}
+          target_commitish: ${{ github.sha }}
           name: "GitLab for Mac ${{ needs.validate-release.outputs.tag }}"
-          draft: ${{ github.event_name == 'workflow_dispatch' && inputs.draft }}
+          draft: ${{ needs.validate-release.outputs.is_draft == 'true' }}
           prerelease: ${{ needs.validate-release.outputs.prerelease == 'true' }}
+          make_latest: ${{ needs.validate-release.outputs.prerelease == 'false' && needs.validate-release.outputs.is_draft == 'false' && 'true' || 'false' }}
+          body_path: release-header.md
           generate_release_notes: true
           fail_on_unmatched_files: true
-          overwrite_files: true
+          overwrite_files: false
           files: |
             dist/GitLab-for-Mac-*.app.zip
             dist/GitLab-for-Mac-*.dmg

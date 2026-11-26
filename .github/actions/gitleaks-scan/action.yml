@@ -1,0 +1,57 @@
+name: Gitleaks Secret Scan
+description: Downloads SHA-256 verified Gitleaks and scans git history (including merge diffs) and working tree.
+
+inputs:
+  mode:
+    description: "Scan mode: 'pr' (merge commit range + working tree) or 'full' (entire repo history + working tree)"
+    required: false
+    default: "full"
+  base-sha:
+    description: "Optional PR base SHA fallback"
+    required: false
+    default: ""
+  head-sha:
+    description: "Optional PR head SHA fallback"
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Run verified Gitleaks scan
+      shell: bash
+      env:
+        GITLEAKS_VERSION: "8.30.1"
+        GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+        SCAN_MODE: ${{ inputs.mode }}
+        BASE_SHA: ${{ inputs.base-sha }}
+        HEAD_SHA: ${{ inputs.head-sha }}
+      run: |
+        set -euo pipefail
+        tmp=$(mktemp -d)
+        trap 'rm -rf "$tmp"' EXIT
+        archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+        curl --proto '=https' --tlsv1.2 -fsSL \
+          "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${archive}" \
+          -o "${tmp}/${archive}"
+        echo "${GITLEAKS_SHA256}  ${tmp}/${archive}" | sha256sum -c -
+        tar -xzf "${tmp}/${archive}" -C "$tmp" gitleaks
+
+        if [[ "$SCAN_MODE" == "pr" ]]; then
+          if git rev-parse --verify -q HEAD^2 >/dev/null 2>&1; then
+            range="HEAD^1..HEAD^2"
+          elif [[ -n "$BASE_SHA" && -n "$HEAD_SHA" ]] \
+            && git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null \
+            && git cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null; then
+            range="${BASE_SHA}..${HEAD_SHA}"
+          else
+            echo "::error::Unable to resolve PR commit range for Gitleaks scan (fail-closed)."
+            exit 1
+          fi
+          "${tmp}/gitleaks" git --config=.gitleaks.toml --redact --verbose --log-opts="-m ${range}" .
+        else
+          "${tmp}/gitleaks" git --config=.gitleaks.toml --redact --log-opts="-m --all" .
+        fi
+
+        # Also scan checked-out working tree to catch any merge-resolution or untracked leaks.
+        "${tmp}/gitleaks" dir --config=.gitleaks.toml --redact --no-banner .
