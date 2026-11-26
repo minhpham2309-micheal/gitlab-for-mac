@@ -215,7 +215,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup pinned Rust toolchain
-        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
+        uses: ./.github/actions/setup-rust
 
       - name: Restore Cargo build cache (warmed on main)
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3

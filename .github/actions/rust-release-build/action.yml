@@ -25,7 +25,7 @@ runs:
   using: composite
   steps:
     - name: Setup pinned Rust toolchain
-      uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
+      uses: ./.github/actions/setup-rust
       with:
         targets: ${{ inputs.target }}
 

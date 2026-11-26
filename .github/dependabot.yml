@@ -22,7 +22,7 @@ updates:
 
   - package-ecosystem: "cargo"
     directory: "/"
-    versioning-strategy: "increase-if-necessary"
+    versioning-strategy: "auto"
     schedule:
       interval: "weekly"
       day: "monday"
