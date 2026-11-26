@@ -97,9 +97,11 @@ jobs:
           set -euo pipefail
           crate_version=$(awk -F'"' '/^version = "/ { print $2; exit }' Cargo.toml)
           short_sha="${GITHUB_SHA:0:7}"
-          echo "crate_version=${crate_version}" >> "$GITHUB_OUTPUT"
-          echo "short_sha=${short_sha}" >> "$GITHUB_OUTPUT"
-          echo "canary_version=${crate_version}-canary.${short_sha}" >> "$GITHUB_OUTPUT"
+          {
+            echo "crate_version=${crate_version}"
+            echo "short_sha=${short_sha}"
+            echo "canary_version=${crate_version}-canary.${short_sha}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Verify Clippy lints on merged main
         shell: bash
