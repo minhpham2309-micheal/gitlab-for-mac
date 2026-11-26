@@ -101,7 +101,7 @@ jobs:
                 rust="true"
                 ;;
             esac
-          done < <(git -c core.quotePath=false diff -z --name-only "${diff_args[@]}")
+          done < <(git -c core.quotePath=false diff --no-renames -z --name-only "${diff_args[@]}")
 
           if (( file_count == 0 )); then
             rust="true"

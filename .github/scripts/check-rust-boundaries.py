@@ -9,14 +9,14 @@ import subprocess
 import sys
 
 FORBIDDEN_CODE_RE = re.compile(
-    r"\bgpui_kit\b|\bgpui\s*::|\bgpui_app\b|\binclude!\s*[\(\[\{]"
+    r"\bgpui_kit\b|\bgpui\s*::|\bgpui_app\b|\binclude\s*!\s*[\(\[\{]"
 )
-FORBIDDEN_PATH_ATTR_RE = re.compile(r"#\[[^\]]*\bpath\s*=", re.DOTALL)
+FORBIDDEN_PATH_ATTR_RE = re.compile(r"#\s*\[[^\]]*\bpath\s*=", re.DOTALL)
 TOML_ALIAS_RE = re.compile(r"""package\s*=\s*["']gpui(?:-kit)?["']""")
 
 
 def strip_rust_comments_and_strings(src: str) -> str:
-    """Replace Rust comments and string literals with spaces, preserving newlines."""
+    """Replace Rust comments and char/string literals with spaces, preserving newlines."""
     out = []
     i, n = 0, len(src)
     while i < n:
@@ -44,11 +44,11 @@ def strip_rust_comments_and_strings(src: str) -> str:
                 else:
                     out.append("\n" if src[i] == "\n" else " ")
                     i += 1
-        # Raw string literal: r#"..."# or br#"..."#
-        elif (ch == "r" or (ch == "b" and nxt == "r")) and (
+        # Raw string literal: r#"..."#, br#"..."#, cr#"..."#
+        elif (ch == "r" or (ch in ("b", "c") and nxt == "r")) and (
             i == 0 or not (src[i - 1].isalnum() or src[i - 1] == "_")
         ):
-            j = i + (2 if ch == "b" else 1)
+            j = i + (2 if ch in ("b", "c") else 1)
             hashes = 0
             while j < n and src[j] == "#":
                 hashes += 1
@@ -67,7 +67,24 @@ def strip_rust_comments_and_strings(src: str) -> str:
             else:
                 out.append(ch)
                 i += 1
-        # Normal string literal
+        # Char or byte literal (without consuming lifetimes like 'a or 'static)
+        elif ch == "'" and i + 2 < n:
+            if src[i + 1] == "\\":
+                out.extend([" ", " "])
+                i += 2
+                while i < n and src[i] != "'" and src[i] != "\n":
+                    out.append(" ")
+                    i += 1
+                if i < n and src[i] == "'":
+                    out.append(" ")
+                    i += 1
+            elif src[i + 1] not in ("'", "\n") and src[i + 2] == "'":
+                out.extend([" ", " ", " "])
+                i += 3
+            else:
+                out.append(ch)
+                i += 1
+        # Normal / byte / C string literal
         elif ch == '"':
             out.append(" ")
             i += 1
@@ -103,26 +120,30 @@ def check_test_mod_gated(test_file: str) -> str | None:
         cleaned = strip_rust_comments_and_strings(open(parent, encoding="utf-8").read())
         lines = cleaned.splitlines()
         for idx, line in enumerate(lines):
-            if not mod_decl_re.search(line):
+            m = mod_decl_re.search(line)
+            if not m:
                 continue
             found_decl = True
-            # Walk upwards only over contiguous attribute/blank lines; stop at any code token.
-            attrs = [line]
-            j = idx - 1
-            while j >= 0:
-                stripped = lines[j].strip()
-                if stripped == "":
-                    j -= 1
-                    continue
-                if stripped.startswith("#[") or stripped.endswith("]") or stripped.startswith("pub"):
+            prefix = line[: m.start()]
+            has_inline_delim = any(tok in prefix for tok in (";", "{", "}"))
+            tail_prefix = re.split(r"[;{}]", prefix)[-1] if has_inline_delim else prefix
+            attrs = [tail_prefix]
+            if not has_inline_delim:
+                j = idx - 1
+                while j >= 0:
+                    stripped = lines[j].strip()
+                    if stripped == "":
+                        j -= 1
+                        continue
                     if any(tok in stripped for tok in (";", "{", "}")):
                         break
-                    attrs.append(stripped)
-                    j -= 1
-                else:
-                    break
+                    if stripped.startswith("#") or stripped.endswith("]") or stripped.startswith("pub"):
+                        attrs.append(stripped)
+                        j -= 1
+                    else:
+                        break
             joined = " ".join(reversed(attrs))
-            if not re.search(r"#\[\s*cfg\s*\(\s*test\s*\)\s*\]", joined):
+            if not re.search(r"#\s*\[\s*cfg\s*\(\s*test\s*\)\s*\]", joined):
                 return f"{parent}:{idx + 1}: mod {mod_name}; is not directly gated by #[cfg(test)]"
     if not found_decl:
         return f"{test_file}:1: test module {mod_name} has no #[cfg(test)] declaration in parent module"

@@ -53,8 +53,8 @@ jobs:
           set -euo pipefail
           title="[Security] Weekly scheduled security audit failed"
           body="The weekly scheduled security audit failed on \`main\`. Review the workflow run logs immediately: ${RUN_URL}"
-          existing=$(gh issue list --repo "$REPO" --state open --author "app/github-actions" --limit 50 --json number,title \
-            | jq -r --arg t "$title" '[.[] | select(.title == $t)][0].number // empty')
+          existing=$(gh api --paginate "repos/${REPO}/issues?state=open&creator=github-actions%5Bbot%5D&per_page=100" \
+            | jq -s -r --arg t "$title" '[.[][] | select(.pull_request == null and .title == $t)][0].number // empty')
           if [[ -n "$existing" ]]; then
             gh issue comment "$existing" --repo "$REPO" --body "$body"
           else

@@ -45,12 +45,10 @@ jobs:
         with:
           components: ""
 
-      - name: Enforce release ref, ancestry, SemVer, and immutability rules
+      - name: Enforce release ref, ancestry, and SemVer rules
         id: meta
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
           EVENT_NAME: ${{ github.event_name }}
           CURRENT_REF: ${{ github.ref }}
           REF_NAME: ${{ github.ref_name }}
@@ -100,14 +98,6 @@ jobs:
             fi
           fi
 
-          # Fail-closed check: block if ANY release (published or draft) already exists for this tag.
-          existing_count=$(gh api --paginate "repos/${REPO}/releases?per_page=100" \
-            | jq -s -r --arg tag "$tag" '[.[][] | select(.tag_name == $tag)] | length')
-          if (( existing_count > 0 )); then
-            echo "::error::A GitHub Release (published or draft) already exists for '${tag}'. Delete stale drafts or bump version."
-            exit 1
-          fi
-
           prerelease="false"
           if [[ "$version" == *-* ]]; then
             prerelease="true"
@@ -132,9 +122,34 @@ jobs:
       - name: Audit dependencies before release (cargo-deny)
         uses: ./.github/actions/cargo-deny-check
 
+  check-release-slot:
+    name: Verify Release Slot Unused (Draft & Published)
+    needs: [validate-release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      # Runs with zero checkout and zero repo code so contents: write can see draft releases
+      # and fail fast before starting expensive macOS builds and Apple notarization.
+      - name: Fail fast if any published or draft release already exists for tag
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          REL_TAG: ${{ needs.validate-release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          existing_count=$(gh api --paginate "repos/${REPO}/releases?per_page=100" \
+            | jq -s -r --arg tag "$REL_TAG" '[.[][] | select(.tag_name == $tag)] | length')
+          if (( existing_count > 0 )); then
+            echo "::error::A GitHub Release (published or draft) already exists for '${REL_TAG}'. Delete stale drafts or bump version."
+            exit 1
+          fi
+
   build-arm64:
     name: Build Hermetic Release (arm64, no secrets)
-    needs: [validate-release]
+    needs: [validate-release, check-release-slot]
     runs-on: macos-15
     timeout-minutes: 45
     permissions:
@@ -164,7 +179,7 @@ jobs:
 
   build-x86_64:
     name: Build Hermetic Release (x86_64, no secrets)
-    needs: [validate-release]
+    needs: [validate-release, check-release-slot]
     runs-on: macos-15-intel
     timeout-minutes: 45
     permissions:
