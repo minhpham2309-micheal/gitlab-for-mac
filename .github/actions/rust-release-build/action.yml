@@ -47,7 +47,7 @@ runs:
         CARGO_INCREMENTAL: "0"
       run: |
         set -euo pipefail
-        crate_version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
+        crate_version=$(cargo metadata --no-deps --format-version 1 | jq -er '.packages[] | select(.name == "gitlab-for-mac") | .version')
         if [[ ! "$crate_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
           echo "::error::Invalid crate version from Cargo.toml: ${crate_version}"
           exit 1
@@ -62,7 +62,12 @@ runs:
 
         cargo build --release --locked --target "$TARGET"
         bin="target/${TARGET}/release/gitlab-for-mac"
-        "$bin" --version
+        ver_out=$("$bin" --version)
+        expected_ver="gitlab-for-mac ${crate_version}"
+        if [[ "$ver_out" != "$expected_ver" ]]; then
+          echo "::error::Unexpected binary --version output: got '${ver_out}', expected '${expected_ver}'."
+          exit 1
+        fi
 
         bytes=$(stat -f%z "$bin")
         mb=$(awk -v b="$bytes" 'BEGIN { printf "%.2f", b / 1048576 }')

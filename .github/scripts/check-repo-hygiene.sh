@@ -40,16 +40,12 @@ emit_warning() {
   warnings=$((warnings + 1))
 }
 
-REPO_ROOT=$(git rev-parse --show-toplevel)
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 echo "==> Checking tracked files, symlinks, submodules, and forbidden patterns..."
 while IFS= read -r -d '' file; do
   if [[ -L "$file" ]]; then
-    target=$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$file")
-    case "$target" in
-      "${REPO_ROOT}"/*|"${REPO_ROOT}") ;;
-      *) emit_error "Tracked symlink escapes repository root: ${file}" "$file" ;;
-    esac
+    emit_error "Tracked symlinks are disallowed in this repository: ${file}" "$file"
     continue
   fi
   if [[ ! -f "$file" ]]; then
@@ -61,12 +57,13 @@ while IFS= read -r -d '' file; do
   base="${lower##*/}"
   case "$lower" in
     .env|.env.*|*/.env|*/.env.*|*.env|.envrc|*/.envrc|.netrc|*/.netrc|\
+    .gitleaksignore|*/.gitleaksignore|\
     *.pem|*.key|*.p8|*.p12|*.pfx|*.jks|*.keystore|*.mobileprovision|\
     credentials.json|*/credentials.json|.ds_store|*/.ds_store|\
     glab-cli/config.yml|*/glab-cli/config.yml|.gitmodules|*/.gitmodules)
-      emit_error "Forbidden sensitive, submodule, or OS metadata file tracked in git: ${file}" "$file"
+      emit_error "Forbidden sensitive, ignore, submodule, or OS metadata file tracked in git: ${file}" "$file"
       ;;
-    .cargo/config|.cargo/config.toml|vendor/*)
+    .cargo/config|.cargo/config.toml|*/.cargo/config|*/.cargo/config.toml|vendor/*|*/vendor/*)
       emit_error "Unauthorized Cargo config or vendored source override tracked in git: ${file}" "$file"
       ;;
   esac
@@ -77,33 +74,10 @@ while IFS= read -r -d '' file; do
   esac
 done < <(git -c core.quotePath=false ls-files -z)
 
-echo "==> Checking src/gitlab/ UI isolation (no gpui/gpui_app in non-test code)..."
-if grep -nE 'package\s*=\s*"gpui-kit"' Cargo.toml >/dev/null 2>&1; then
-  emit_error "Renamed gpui-kit dependency alias is disallowed in Cargo.toml." "Cargo.toml"
+echo "==> Checking src/gitlab/ UI isolation (lexical Rust & Cargo.toml audit)..."
+if ! python3 "${SCRIPT_DIR}/check-rust-boundaries.py"; then
+  errors=$((errors + 1))
 fi
-
-while IFS= read -r -d '' file; do
-  [[ -f "$file" && ! -L "$file" ]] || continue
-  if [[ "$file" == *_tests.rs ]]; then
-    mod_name=$(basename "$file" .rs)
-    parent_mod="$(dirname "$file")/mod.rs"
-    if [[ ! -f "$parent_mod" ]] || ! grep -nE -B2 "mod[[:space:]]+${mod_name}[[:space:]]*;" "$parent_mod" \
-      | grep -q '#\[cfg(test)\]'; then
-      emit_error "Test file ${file} must be gated behind #[cfg(test)] in ${parent_mod}." "$file"
-    fi
-    continue
-  fi
-
-  # Strip single-line comments before checking code tokens to avoid docstring false positives.
-  while IFS= read -r hit; do
-    [[ -z "$hit" ]] && continue
-    lineno="${hit%%:*}"
-    emit_error "UI or path-include dependency found in UI-agnostic module ${file}:${lineno}" "$file" "$lineno"
-  done < <(
-    awk '{ sub(/\/\/.*/, ""); print NR ":" $0 }' "$file" \
-      | grep -E '^[0-9]+:.*(\bgpui_kit\b|\bgpui::|\bgpui_app\b|#\[[[:space:]]*path[[:space:]]*=|\binclude!\s*\()' || true
-  )
-done < <(git -c core.quotePath=false ls-files -z 'src/gitlab/*.rs')
 
 echo "==> Checking for leaked local workspace paths..."
 while IFS= read -r -d '' file; do
@@ -111,15 +85,18 @@ while IFS= read -r -d '' file; do
   case "$file" in
     Cargo.lock|.github/scripts/check-repo-hygiene.sh) continue ;;
   esac
-  # Strip only the exact synthetic URL fixture before scanning, never dropping whole lines.
   while IFS= read -r hit; do
     [[ -z "$hit" ]] && continue
     lineno="${hit%%:*}"
     emit_error "Possible local filesystem path leaked in ${file}:${lineno}" "$file" "$lineno"
   done < <(
     if grep -Iq . "$file" 2>/dev/null; then
-      sed 's|vscode://file/Users/example||g' "$file" \
-        | grep -inE '(/Users/[^/[:space:]"'\'']+|/home/[^/[:space:]"'\'']+|[A-Za-z]:[/\\]Users[/\\][^/\\[:space:]"'\'']+)' || true
+      if [[ "$file" == "src/gpui_app/safe_url.rs" ]]; then
+        sed 's|"vscode://file/Users/example"|""|g' "$file" \
+          | grep -inE '(/Users/[^/[:space:]"'\'']+|/home/[^/[:space:]"'\'']+|[A-Za-z]:[/\\]Users[/\\][^/\\[:space:]"'\'']+)' || true
+      else
+        grep -inE '(/Users/[^/[:space:]"'\'']+|/home/[^/[:space:]"'\'']+|[A-Za-z]:[/\\]Users[/\\][^/\\[:space:]"'\'']+)' "$file" || true
+      fi
     fi
   )
 done < <(git -c core.quotePath=false ls-files -z)
@@ -139,13 +116,14 @@ while IFS= read -r -d '' file; do
 done < <(git -c core.quotePath=false ls-files -z 'src/*.rs')
 
 if [[ -n "${COMMIT_RANGE:-}" ]]; then
-  echo "==> Checking commits (${COMMIT_RANGE}) for disallowed AI attribution trailers..."
+  echo "==> Checking commits (${COMMIT_RANGE}) for disallowed AI attribution..."
   commits=$(git rev-list "$COMMIT_RANGE")
+  ai_agents='(claude|anthropic|copilot|openai|chatgpt|gemini|antigravity|cursor|codex|aider|cline|windsurf|devin|codeium|opencode|deepseek|qwen|noreply@anthropic\.com)'
   while IFS= read -r sha; do
     [[ -z "$sha" ]] && continue
-    msg=$(git show -s --format=%B "$sha")
-    if printf '%s\n' "$msg" | grep -iE '^[[:space:]]*(Co-Authored-By|Signed-off-by|Assisted-by|Helped-by|Generated (with|by)):?.*(claude|anthropic|copilot|openai|chatgpt|gemini|antigravity|cursor|codex|aider|cline|windsurf|devin|codeium|opencode|deepseek|qwen|noreply@anthropic\.com)' >/dev/null 2>&1; then
-      emit_error "Commit ${sha:0:8} contains a disallowed AI attribution line."
+    meta=$(git show -s --format='%an <%ae>%n%cn <%ce>%n%B' "$sha")
+    if printf '%s\n' "$meta" | grep -iE "(^[^[:alnum:]]*(Co-Authored-By|Signed-off-by|Assisted-by|Helped-by|Generated (with|by)):?.*${ai_agents}|^.*<[^>]*${ai_agents}[^>]*>$)" >/dev/null 2>&1; then
+      emit_error "Commit ${sha:0:8} contains disallowed AI attribution or AI author metadata."
     fi
   done <<< "$commits"
 fi

@@ -28,6 +28,11 @@ runs:
         HEAD_SHA: ${{ inputs.head-sha }}
       run: |
         set -euo pipefail
+        if [[ -e ".gitleaksignore" ]]; then
+          echo "::error::Disallowed .gitleaksignore file detected; all allowlists must live in .gitleaks.toml."
+          exit 1
+        fi
+
         tmp=$(mktemp -d)
         trap 'rm -rf "$tmp"' EXIT
         archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
@@ -48,10 +53,10 @@ runs:
             echo "::error::Unable to resolve PR commit range for Gitleaks scan (fail-closed)."
             exit 1
           fi
-          "${tmp}/gitleaks" git --config=.gitleaks.toml --redact --verbose --log-opts="-m ${range}" .
+          "${tmp}/gitleaks" git --config=.gitleaks.toml --ignore-gitleaks-allow --redact --verbose --log-opts="-m ${range}" .
         else
-          "${tmp}/gitleaks" git --config=.gitleaks.toml --redact --log-opts="-m --all" .
+          "${tmp}/gitleaks" git --config=.gitleaks.toml --ignore-gitleaks-allow --redact --log-opts="-m --all" .
         fi
 
         # Also scan checked-out working tree to catch any merge-resolution or untracked leaks.
-        "${tmp}/gitleaks" dir --config=.gitleaks.toml --redact --no-banner .
+        "${tmp}/gitleaks" dir --config=.gitleaks.toml --ignore-gitleaks-allow --redact --no-banner .

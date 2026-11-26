@@ -56,6 +56,8 @@ jobs:
           if [[ -n "$BEFORE_SHA" && "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]] \
             && git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
             commit_range="${BEFORE_SHA}..${AFTER_SHA}"
+          elif git rev-parse --verify -q HEAD~1 >/dev/null 2>&1; then
+            commit_range="HEAD~1..HEAD"
           fi
           COMMIT_RANGE="$commit_range" .github/scripts/check-repo-hygiene.sh
 

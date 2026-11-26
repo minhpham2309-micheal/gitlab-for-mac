@@ -67,7 +67,10 @@ jobs:
             is_draft="true"
           else
             tag="$REF_NAME"
-            git fetch origin main --depth=0 >/dev/null 2>&1 || true
+            git rev-parse --verify -q origin/main >/dev/null || {
+              echo "::error::Missing origin/main ref for ancestry verification."
+              exit 1
+            }
             if ! git merge-base --is-ancestor HEAD origin/main; then
               echo "::error::Release tag '${tag}' (${GITHUB_SHA}) is not an ancestor of origin/main."
               exit 1
@@ -80,17 +83,28 @@ jobs:
           fi
 
           version="${tag#v}"
-          crate_version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
+          crate_version=$(cargo metadata --no-deps --format-version 1 | jq -er '.packages[] | select(.name == "gitlab-for-mac") | .version')
           if [[ "$version" != "$crate_version" ]]; then
             echo "::error::Tag version (${version}) does not match Cargo.toml version (${crate_version})."
             exit 1
           fi
 
-          # Block overwriting an already-published immutable release.
-          existing_state=$(gh api "repos/${REPO}/releases/tags/${tag}" \
-            --jq 'if .draft == false then "published" else "draft" end' 2>/dev/null || echo "none")
-          if [[ "$existing_state" == "published" ]]; then
-            echo "::error::Refusing to overwrite already-published GitHub Release '${tag}'."
+          # On workflow_dispatch, ensure tag does not already point to a different commit.
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            if git rev-parse --verify -q "refs/tags/${tag}" >/dev/null 2>&1; then
+              tag_commit=$(git rev-list -n 1 "refs/tags/${tag}")
+              if [[ "$tag_commit" != "$GITHUB_SHA" ]]; then
+                echo "::error::Tag '${tag}' already exists at ${tag_commit}, which differs from HEAD (${GITHUB_SHA})."
+                exit 1
+              fi
+            fi
+          fi
+
+          # Fail-closed check: block if ANY release (published or draft) already exists for this tag.
+          existing_count=$(gh api --paginate "repos/${REPO}/releases?per_page=100" \
+            | jq -s -r --arg tag "$tag" '[.[][] | select(.tag_name == $tag)] | length')
+          if (( existing_count > 0 )); then
+            echo "::error::A GitHub Release (published or draft) already exists for '${tag}'. Delete stale drafts or bump version."
             exit 1
           fi
 
@@ -251,7 +265,7 @@ jobs:
             --target aarch64-apple-darwin \
             --build-number "$GITHUB_RUN_NUMBER" \
             --out-dir dist \
-            "${extra_args[@]}"
+            ${extra_args[@]+"${extra_args[@]}"}
 
       - name: Clean up temporary signing keychain
         if: always()
@@ -348,7 +362,7 @@ jobs:
             --target x86_64-apple-darwin \
             --build-number "$GITHUB_RUN_NUMBER" \
             --out-dir dist \
-            "${extra_args[@]}"
+            ${extra_args[@]+"${extra_args[@]}"}
 
       - name: Clean up temporary signing keychain
         if: always()
@@ -412,6 +426,21 @@ jobs:
           cat SHA256SUMS-arm64.txt SHA256SUMS-x86_64.txt | sort -k2 > SHA256SUMS.txt
           rm -f SHA256SUMS-arm64.txt SHA256SUMS-x86_64.txt
           sha256sum -c SHA256SUMS.txt
+
+      - name: Re-verify release immutability before attesting or publishing
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          REL_TAG: ${{ needs.validate-release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          existing_count=$(gh api --paginate "repos/${REPO}/releases?per_page=100" \
+            | jq -s -r --arg tag "$REL_TAG" '[.[][] | select(.tag_name == $tag)] | length')
+          if (( existing_count > 0 )); then
+            echo "::error::A GitHub Release already exists for '${REL_TAG}'; refusing to mutate or overwrite."
+            exit 1
+          fi
 
       - name: Generate SLSA build provenance attestation
         if: github.event.repository.visibility == 'public' || vars.ENABLE_ATTESTATIONS == 'true'

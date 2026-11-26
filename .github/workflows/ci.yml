@@ -56,25 +56,17 @@ jobs:
             exit 0
           fi
 
-          # Prefer the checked-out PR merge commit parents to avoid force-push races
-          # and GitHub's 3,000-file pulls.listFiles API truncation.
+          # Diff PR merge commit against base parent with NUL delimiters to avoid
+          # force-push races, main-branch drift, C-quoting bypasses, and API 3,000-file caps.
+          diff_args=()
           if git rev-parse --verify -q HEAD^2 >/dev/null 2>&1; then
-            diff_files=$(git -c core.quotePath=false diff --name-only HEAD^1 HEAD^2)
+            diff_args=(HEAD^1 HEAD)
           elif [[ -n "$BASE_SHA" && -n "$HEAD_SHA" ]] \
             && git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null \
             && git cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null; then
-            diff_files=$(git -c core.quotePath=false diff --name-only "${BASE_SHA}...${HEAD_SHA}")
+            diff_args=("${BASE_SHA}...${HEAD_SHA}")
           else
             # Fail closed if commit diff cannot be resolved.
-            {
-              echo "rust=true"
-              echo "workflows=true"
-              echo "packaging=true"
-            } >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          if [[ -z "$diff_files" ]]; then
             {
               echo "rust=true"
               echo "workflows=true"
@@ -86,33 +78,36 @@ jobs:
           rust="false"
           workflows="false"
           packaging="false"
-          while IFS= read -r path; do
+          file_count=0
+          while IFS= read -r -d '' path; do
             [[ -z "$path" ]] && continue
-            case "$path" in
-              .github/workflows/*|.github/actions/*|.github/scripts/*)
+            file_count=$((file_count + 1))
+            lower=$(printf '%s' "$path" | tr '[:upper:]' '[:lower:]')
+            case "$lower" in
+              .github/workflows/*|.github/actions/*|.github/scripts/*|*.sh)
                 workflows="true"
                 ;;
             esac
-            case "$path" in
-              .github/scripts/package-macos.sh|.github/scripts/notarize-macos.sh|assets/AppIcon.icns)
+            case "$lower" in
+              .github/scripts/package-macos.sh|.github/scripts/notarize-macos.sh|assets/appicon.icns|readme.md|license)
                 packaging="true"
                 ;;
             esac
-            # Only pure non-build documentation files may skip the macOS Rust build.
-            # README.md and LICENSE are intentionally excluded because package-macos.sh ships them.
+            # Strict docs-only allowlist: ONLY explicit non-build documentation files skip Rust CI.
             case "$path" in
-              docs/*|AGENTS.md|.github/PULL_REQUEST_TEMPLATE.md|.github/ISSUE_TEMPLATE/*)
-                ;;
-              *.md)
-                if [[ "$path" == "README.md" ]]; then
-                  rust="true"
-                fi
+              docs/*.md|AGENTS.md|CHANGELOG.md|CONTRIBUTING.md|SECURITY.md|.github/PULL_REQUEST_TEMPLATE.md|.github/ISSUE_TEMPLATE/*)
                 ;;
               *)
                 rust="true"
                 ;;
             esac
-          done <<< "$diff_files"
+          done < <(git -c core.quotePath=false diff -z --name-only "${diff_args[@]}")
+
+          if (( file_count == 0 )); then
+            rust="true"
+            workflows="true"
+            packaging="true"
+          fi
 
           {
             echo "rust=${rust}"
@@ -158,7 +153,7 @@ jobs:
       - name: Lint all shell scripts recursively with ShellCheck
         if: needs.changes.outputs.workflows == 'true'
         shell: bash
-        run: git -c core.quotePath=false ls-files -z '*.sh' | xargs -0 shellcheck
+        run: git -c core.quotePath=false ls-files -z '*.sh' | xargs -0 -r shellcheck
 
       - name: Lint GitHub Actions workflows with actionlint
         if: needs.changes.outputs.workflows == 'true'
@@ -251,7 +246,14 @@ jobs:
 
       - name: Smoke-test compiled binary startup (--version)
         shell: bash
-        run: cargo run --locked -- --version
+        run: |
+          set -euo pipefail
+          crate_version=$(cargo metadata --no-deps --format-version 1 | jq -er '.packages[] | select(.name == "gitlab-for-mac") | .version')
+          ver_out=$(cargo run --locked -- --version)
+          if [[ "$ver_out" != "gitlab-for-mac ${crate_version}" ]]; then
+            echo "::error::Unexpected --version output: got '${ver_out}', expected 'gitlab-for-mac ${crate_version}'."
+            exit 1
+          fi
 
       - name: Smoke-test macOS packaging script when modified
         if: needs.changes.outputs.packaging == 'true'
@@ -328,7 +330,12 @@ jobs:
               echo "::error::Rust changes detected but 'rust-macos' finished with status '${MACOS_RESULT}'."
               exit 1
             fi
-          elif [[ "$MACOS_RESULT" != "success" && "$MACOS_RESULT" != "skipped" ]]; then
-            echo "::error::Job 'rust-macos' finished with status '${MACOS_RESULT}'."
+          elif [[ "$RUST_CHANGED" == "false" ]]; then
+            if [[ "$MACOS_RESULT" != "success" && "$MACOS_RESULT" != "skipped" ]]; then
+              echo "::error::Job 'rust-macos' finished with status '${MACOS_RESULT}'."
+              exit 1
+            fi
+          else
+            echo "::error::Unexpected RUST_CHANGED value '${RUST_CHANGED}' (fail-closed)."
             exit 1
           fi

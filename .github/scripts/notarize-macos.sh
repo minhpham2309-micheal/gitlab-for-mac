@@ -32,8 +32,11 @@ notary_init() {
   fi
 
   if [[ "$NOTARY_MODE" == "api-key" ]]; then
-    umask 077
-    printf '%s' "$APPLE_API_KEY_P8_BASE64" | tr -d '[:space:]' | base64 --decode > "${WORK_DIR}/AuthKey.p8"
+    # Isolate umask 077 in a subshell so packaged .app/archive permissions stay world-readable.
+    (
+      umask 077
+      printf '%s' "$APPLE_API_KEY_P8_BASE64" | tr -d '[:space:]' | base64 --decode > "${WORK_DIR}/AuthKey.p8"
+    )
   elif [[ "$NOTARY_MODE" == "apple-id" ]]; then
     NOTARY_PROFILE="gitlab-for-mac-notary-$$"
     local -a store_args=(--apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --no-validate)
@@ -46,7 +49,12 @@ notary_init() {
 
 notary_cleanup() {
   if [[ -n "$NOTARY_PROFILE" ]]; then
-    security delete-generic-password -s "$NOTARY_PROFILE" 2>/dev/null || true
+    local -a kc_args=()
+    if [[ -f "${RUNNER_TEMP:-}/app-signing.keychain-db" ]]; then
+      kc_args=("${RUNNER_TEMP}/app-signing.keychain-db")
+    fi
+    security delete-generic-password -s "com.apple.gke.notary.tool.com.apple.security.keychain-profile.${NOTARY_PROFILE}" ${kc_args[@]+"${kc_args[@]}"} 2>/dev/null || true
+    security delete-generic-password -a "com.apple.gke.notary.tool.saved-creds.${NOTARY_PROFILE}" ${kc_args[@]+"${kc_args[@]}"} 2>/dev/null || true
   fi
 }
 

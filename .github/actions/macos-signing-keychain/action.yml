@@ -101,20 +101,26 @@ runs:
           kc=$(printf '%s' "$line" | sed -e 's/^[[:space:]]*"//' -e 's/"[[:space:]]*$//')
           [[ -n "$kc" ]] && orig_kcs+=("$kc")
         done < <(security list-keychains -d user)
-        printf '%s\n' "${orig_kcs[@]}" > "$orig_list"
+        if (( ${#orig_kcs[@]} > 0 )); then
+          printf '%s\n' "${orig_kcs[@]}" > "$orig_list"
+        fi
 
+        security delete-keychain "$keychain" 2>/dev/null || true
         kc_pass=$(openssl rand -hex 24)
+        echo "::add-mask::${kc_pass}"
         security create-keychain -p "$kc_pass" "$keychain"
         security set-keychain-settings -lut 21600 "$keychain"
         security unlock-keychain -p "$kc_pass" "$keychain"
+        # Restrict private-key ACL exclusively to /usr/bin/codesign.
         security import "$cert_file" -P "$MACOS_CERT_PASSWORD" -t cert -f pkcs12 -k "$keychain" \
-          -T /usr/bin/codesign -T /usr/bin/security
+          -T /usr/bin/codesign
         security set-key-partition-list -S apple-tool:,apple: -s -k "$kc_pass" "$keychain"
-        security list-keychains -d user -s "$keychain" "${orig_kcs[@]}"
+        security list-keychains -d user -s "$keychain" ${orig_kcs[@]+"${orig_kcs[@]}"}
         security default-keychain -d user -s "$keychain"
 
-        if ! security find-identity -v -p codesigning "$keychain" | grep -Fq "$APPLE_SIGNING_IDENTITY"; then
-          echo "::error::Configured APPLE_SIGNING_IDENTITY was not found in imported keychain."
+        match_count=$(security find-identity -v -p codesigning "$keychain" | grep -Fic -- "$APPLE_SIGNING_IDENTITY" || true)
+        if (( match_count != 1 )); then
+          echo "::error::Expected exactly 1 codesigning identity matching APPLE_SIGNING_IDENTITY, found ${match_count}."
           exit 1
         fi
 

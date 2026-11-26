@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Packages a compiled macOS release binary into:
+# Packages a compiled macOS binary without executing it (preserving signing isolation):
 #   1. GitLab-for-Mac-<tag>-<arch>.app.zip  (signed & stapled .app bundle)
-#   2. GitLab-for-Mac-<tag>-<arch>.dmg      (drag-to-Applications disk image)
-#   3. gitlab-for-mac-<tag>-<target>.tar.gz (signed standalone CLI archive)
+#   2. GitLab-for-Mac-<tag>-<arch>.dmg      (signed & stapled disk image)
+#   3. gitlab-for-mac-<tag>-<target>.tar.gz (standalone signed & verified CLI archive)
 #   4. SHA256SUMS-<arch>.txt                (verified SHA-256 manifest)
 
 usage() {
@@ -46,10 +46,11 @@ BUNDLE_ID="dev.gitlabformac.app"
 BIN_NAME="gitlab-for-mac"
 SHORT_VERSION="${VERSION%%-*}"
 [[ "$SHORT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Invalid SemVer version: $VERSION" >&2; exit 2; }
-BUNDLE_VERSION="${SHORT_VERSION}.${BUILD_NUMBER}"
+# Strictly numeric 1-component CFBundleVersion per Apple LaunchServices spec (1-3 integers).
+BUNDLE_VERSION="${BUILD_NUMBER}"
 MIN_MACOS="${MACOSX_DEPLOYMENT_TARGET:-13.0}"
 
-echo "==> Verifying binary architecture (${ARCH}), dynamic links, and minos..."
+echo "==> Verifying binary architecture (${ARCH}), dynamic links, and minos (static only)..."
 file "$BINARY"
 actual_arch=$(lipo -archs "$BINARY")
 [[ "$actual_arch" == "$ARCH" ]] || { echo "ERROR: Expected arch '${ARCH}', got '${actual_arch}'" >&2; exit 1; }
@@ -62,20 +63,20 @@ if [[ -n "$non_system_dylibs" ]]; then
 fi
 
 minos=$(otool -l "$BINARY" | awk '/minos[[:space:]]+/ { print $2; exit }')
-if [[ -n "$minos" ]]; then
-  echo "Detected Mach-O minos: ${minos} (target <= ${MIN_MACOS})"
-  awk -v actual="$minos" -v max="$MIN_MACOS" 'BEGIN { exit !(actual + 0 <= max + 0) }' || {
-    echo "ERROR: Binary minos (${minos}) exceeds LSMinimumSystemVersion (${MIN_MACOS})." >&2
-    exit 1
-  }
-fi
-
-if [[ "$(uname -m)" == "$ARCH" ]]; then
-  echo "==> Smoke-testing binary execution (--version)..."
-  ver_out=$("$BINARY" --version)
-  echo "Binary reported: ${ver_out}"
-  [[ "$ver_out" == "${BIN_NAME} "* ]] || { echo "ERROR: Unexpected --version output: ${ver_out}" >&2; exit 1; }
-fi
+[[ -n "$minos" ]] || { echo "ERROR: Failed to detect Mach-O minos from otool -l." >&2; exit 1; }
+echo "Detected Mach-O minos: ${minos} (target <= ${MIN_MACOS})"
+python3 -c '
+import sys
+def parse(v):
+    parts = [int(x) for x in v.split(".")]
+    while len(parts) < 3:
+        parts.append(0)
+    return tuple(parts)
+sys.exit(0 if parse(sys.argv[1]) <= parse(sys.argv[2]) else 1)
+' "$minos" "$MIN_MACOS" || {
+  echo "ERROR: Binary minos (${minos}) exceeds LSMinimumSystemVersion (${MIN_MACOS})." >&2
+  exit 1
+}
 
 mkdir -p "$OUT_DIR"
 WORK_DIR=$(mktemp -d)
@@ -174,18 +175,33 @@ for attempt in 1 2 3; do
 done
 (( dmg_created == 1 )) || { echo "ERROR: Failed to create ${DMG_NAME} after 3 attempts." >&2; exit 1; }
 
-if [[ "$NOTARY_MODE" != "none" ]]; then
-  echo "==> Signing, notarizing, and stapling ${DMG_NAME}..."
+if [[ -n "${APPLE_SIGNING_IDENTITY:-}" ]]; then
+  echo "==> Code signing ${DMG_NAME}..."
   codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY" "${OUT_DIR}/${DMG_NAME}"
+  codesign --verify --strict --verbose=2 "${OUT_DIR}/${DMG_NAME}"
+fi
+if [[ "$NOTARY_MODE" != "none" ]]; then
+  echo "==> Notarizing and stapling ${DMG_NAME}..."
   notary_submit "${OUT_DIR}/${DMG_NAME}"
   xcrun stapler staple "${OUT_DIR}/${DMG_NAME}"
   xcrun stapler validate "${OUT_DIR}/${DMG_NAME}"
 fi
 
+# Sign standalone CLI binary independently (never reuse bundle-bound Mach-O signature).
 TAR_STAGE="${WORK_DIR}/${BIN_NAME}-${TAG}-${TARGET}"
 mkdir -p "$TAR_STAGE"
-cp "${APP_DIR}/Contents/MacOS/${BIN_NAME}" "${TAR_STAGE}/${BIN_NAME}"
+cp "$BINARY" "${TAR_STAGE}/${BIN_NAME}"
 chmod 755 "${TAR_STAGE}/${BIN_NAME}"
+if [[ -n "${APPLE_SIGNING_IDENTITY:-}" ]]; then
+  codesign --force --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" "${TAR_STAGE}/${BIN_NAME}"
+else
+  codesign --force --sign - "${TAR_STAGE}/${BIN_NAME}"
+fi
+codesign --verify --strict --verbose=2 "${TAR_STAGE}/${BIN_NAME}"
+if [[ "$NOTARY_MODE" != "none" ]]; then
+  ditto -c -k --keepParent "${TAR_STAGE}/${BIN_NAME}" "${WORK_DIR}/notary-cli.zip"
+  notary_submit "${WORK_DIR}/notary-cli.zip"
+fi
 cp "${REPO_ROOT}/LICENSE" "${REPO_ROOT}/README.md" "$TAR_STAGE/"
 tar -C "$WORK_DIR" -czf "${OUT_DIR}/${TAR_NAME}" "${BIN_NAME}-${TAG}-${TARGET}"
 

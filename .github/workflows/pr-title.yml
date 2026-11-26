@@ -50,8 +50,9 @@ jobs:
           PR_BODY: ${{ github.event.pull_request.body }}
         run: |
           set -euo pipefail
+          ai_agents='(claude|anthropic|copilot|openai|chatgpt|gemini|antigravity|cursor|codex|aider|cline|windsurf|devin|codeium|opencode|deepseek|qwen|noreply@anthropic\.com)'
           if printf '%s\n%s\n' "$PR_TITLE" "$PR_BODY" \
-            | grep -iE '^[[:space:]]*(Co-Authored-By|Signed-off-by|Assisted-by|Helped-by|Generated (with|by)):?.*(claude|anthropic|copilot|openai|chatgpt|gemini|antigravity|cursor|codex|aider|cline|windsurf|devin|codeium|opencode|deepseek|qwen|noreply@anthropic\.com)' >/dev/null 2>&1; then
+            | grep -iE "^[^[:alnum:]]*(Co-Authored-By|Signed-off-by|Assisted-by|Helped-by|Generated (with|by)):?.*${ai_agents}" >/dev/null 2>&1; then
             echo "::error::Disallowed AI attribution line detected in PR title or description."
             exit 1
           fi
