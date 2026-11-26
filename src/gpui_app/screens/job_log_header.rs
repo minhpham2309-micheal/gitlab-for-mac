@@ -21,7 +21,7 @@ pub fn render_job_log_header(
     wrap_lines: bool,
     has_selection: bool,
     cx: &mut Context<PipelinesView>,
-) -> impl IntoElement {
+) -> impl IntoElement + use<> {
     let theme = cx.theme();
     let dark = theme.is_dark();
     let job_id = job.id;
@@ -151,7 +151,7 @@ pub fn render_job_log_search_bar(
     search_hits: &[LogSearchHit],
     search_idx: usize,
     cx: &mut Context<PipelinesView>,
-) -> impl IntoElement {
+) -> impl IntoElement + use<> {
     let theme = cx.theme();
     let hits_label = if search_hits.is_empty() {
         String::new()

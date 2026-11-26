@@ -16,7 +16,7 @@ pub fn render_readme_card(
     readme_text: &str,
     md_ctx: MarkdownProjectContext,
     cx: &mut Context<ProjectOverviewView>,
-) -> impl IntoElement {
+) -> impl IntoElement + use<> {
     let entry = readme_entry.clone();
     let md = render_markdown_with_uploads(
         format!("ov-readme-{}", readme_entry.id),

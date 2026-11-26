@@ -19,7 +19,7 @@ pub fn render_repo_toolbar(
     project: &Project,
     detail: Option<&ProjectDetail>,
     cx: &mut Context<ProjectOverviewView>,
-) -> impl IntoElement {
+) -> impl IntoElement + use<> {
     let theme = cx.theme();
     let current_ref = view.current_ref.clone();
     let branches: Vec<String> = view.branches.iter().map(|b| b.name.clone()).collect();

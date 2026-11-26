@@ -32,12 +32,11 @@ pub fn parse_iso_utc_secs(iso: &str) -> Option<i64> {
         let rest = &s[19..];
         if let Some(sign_pos) = rest.find(['+', '-']) {
             let tz = &rest[sign_pos..];
-            if tz.len() >= 6 && tz.as_bytes()[3] == b':' {
-                if let (Ok(th), Ok(tm)) = (tz[1..3].parse::<i64>(), tz[4..6].parse::<i64>()) {
+            if tz.len() >= 6 && tz.as_bytes()[3] == b':'
+                && let (Ok(th), Ok(tm)) = (tz[1..3].parse::<i64>(), tz[4..6].parse::<i64>()) {
                     let off = th * 3600 + tm * 60;
                     if tz.starts_with('+') { secs -= off; } else { secs += off; }
                 }
-            }
         }
     }
     Some(secs)

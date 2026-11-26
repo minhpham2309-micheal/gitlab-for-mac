@@ -17,7 +17,7 @@ pub fn render_pipelines_list(
     pipes: Vec<Pipeline>,
     selected_pipeline: Option<&Pipeline>,
     cx: &mut Context<PipelinesView>,
-) -> impl IntoElement {
+) -> impl IntoElement + use<> {
     let theme = cx.theme();
     let dark = theme.is_dark();
     let sel_pid = selected_pipeline.map(|p| p.id);

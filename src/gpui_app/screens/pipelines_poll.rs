@@ -167,27 +167,24 @@ impl PipelinesView {
                     let live = pipes.iter().filter(|p| pipeline_is_live(&p.status)).count();
                     v.pipelines = pipes;
                     v.state.update(cx, |s, _| s.counts.live_pipelines = live);
-                    if let Some(sel_pid) = v.selected_pipeline.as_ref().map(|p| p.id) {
-                        if let Some(fresh) = v.pipelines.iter().find(|p| p.id == sel_pid).cloned() {
+                    if let Some(sel_pid) = v.selected_pipeline.as_ref().map(|p| p.id)
+                        && let Some(fresh) = v.pipelines.iter().find(|p| p.id == sel_pid).cloned() {
                             v.selected_pipeline = Some(fresh);
                         }
-                    }
-                    if v.selected_pipeline.as_ref().map(|p| p.id) == pid {
-                        if let Some((jobs, bridges)) = jb {
+                    if v.selected_pipeline.as_ref().map(|p| p.id) == pid
+                        && let Some((jobs, bridges)) = jb {
                             let was_live = v.selected_job.as_ref().is_some_and(|j| job_is_live(&j.status));
                             v.jobs = jobs;
                             v.bridges = bridges;
-                            if let Some(sel_id) = v.selected_job.as_ref().map(|j| j.id) {
-                                if let Some(updated) = v.jobs.iter().find(|j| j.id == sel_id).cloned() {
+                            if let Some(sel_id) = v.selected_job.as_ref().map(|j| j.id)
+                                && let Some(updated) = v.jobs.iter().find(|j| j.id == sel_id).cloned() {
                                     let now_live = job_is_live(&updated.status);
                                     v.selected_job = Some(updated);
                                     if was_live && !now_live {
                                         v.start_trace_stream(false, cx);
                                     }
                                 }
-                            }
                         }
-                    }
                     v.sync_summary(cx);
                     cx.notify();
                 }

@@ -162,13 +162,11 @@ impl AppState {
     }
 
     fn apply_nav_entry(&mut self, entry: NavEntry, cx: &mut Context<Self>) {
-        if let Some(pid) = entry.project_id {
-            if self.project.as_ref().map(|p| p.id) != Some(pid) {
-                if let Some(proj) = self.projects.iter().find(|p| p.id == pid).cloned() {
+        if let Some(pid) = entry.project_id
+            && self.project.as_ref().map(|p| p.id) != Some(pid)
+                && let Some(proj) = self.projects.iter().find(|p| p.id == pid).cloned() {
                     self.activate_project_no_history(proj, entry.screen, cx);
                 }
-            }
-        }
         self.switch_screen_no_history(entry.screen, cx);
         match entry.target {
             NavTarget::Screen => {}

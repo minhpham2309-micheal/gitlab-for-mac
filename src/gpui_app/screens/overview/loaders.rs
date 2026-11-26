@@ -15,14 +15,13 @@ impl ProjectOverviewView {
         let origin = client.origin().ascii_serialization();
         let cache = cx.try_global::<RepoCache>().cloned();
         let cache_gen = cache.as_ref().map(RepoCache::generation).unwrap_or(0);
-        if !force {
-            if let Some(meta) = cache.as_ref().and_then(|c| c.get_meta(&origin, project.id)) {
+        if !force
+            && let Some(meta) = cache.as_ref().and_then(|c| c.get_meta(&origin, project.id)) {
                 self.detail = Some(meta.detail);
                 self.languages = meta.languages;
                 self.counts = meta.counts;
                 cx.notify();
             }
-        }
         self.meta_task = Some(cx.spawn(async move |this, cx| {
             let res = spawn_tokio(async move {
                 let (det, langs, counts, branches, tags) = tokio::join!(
@@ -80,8 +79,8 @@ impl ProjectOverviewView {
         self.commit_expanded = false;
         self.load_latest_commit(cx);
 
-        if !force {
-            if let Some(hit) = cache.as_ref().and_then(|c| c.get_tree(&origin, project.id, &git_ref, &path)) {
+        if !force
+            && let Some(hit) = cache.as_ref().and_then(|c| c.get_tree(&origin, project.id, &git_ref, &path)) {
                 self.entries = hit.entries;
                 self.tree_loading = false;
                 self.commits_loading = !hit.commits_hydrated;
@@ -92,7 +91,6 @@ impl ProjectOverviewView {
                 if !hit.commits_hydrated { self.hydrate_last_commits(r_ep, cx); }
                 return;
             }
-        }
 
         self.entries.clear();
         self.tree_loading = true;

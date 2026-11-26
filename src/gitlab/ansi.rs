@@ -41,12 +41,11 @@ pub fn colorize(input: &str) -> Vec<(String, Rgb)> {
             return;
         }
         let text = std::mem::take(buf);
-        if let Some((last, last_color)) = spans.last_mut() {
-            if *last_color == color {
+        if let Some((last, last_color)) = spans.last_mut()
+            && *last_color == color {
                 last.push_str(&text);
                 return;
             }
-        }
         spans.push((text, color));
     };
     while i < bytes.len() {

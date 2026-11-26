@@ -54,7 +54,7 @@ Because a GitLab client handles personal access tokens and untrusted repository/
 ### Prerequisites
 
 - **macOS** (Apple Silicon or Intel)
-- **Rust toolchain** (Edition 2021 — install via [rustup](https://rustup.rs))
+- **Rust toolchain** (latest stable, Edition 2024 — install via [rustup](https://rustup.rs))
 - **[`glab` CLI](https://gitlab.com/gitlab-org/cli)** authenticated with at least one GitLab host:
 
 ```bash

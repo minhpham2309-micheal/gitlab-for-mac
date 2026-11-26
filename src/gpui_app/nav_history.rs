@@ -98,11 +98,10 @@ impl NavHistory {
         std::iter::once(&self.current)
             .chain(self.back.iter().rev())
             .find_map(|e| {
-                if e.project_id == project_id {
-                    if let NavTarget::OverviewDir { path, .. } = &e.target {
+                if e.project_id == project_id
+                    && let NavTarget::OverviewDir { path, .. } = &e.target {
                         return Some(path.clone());
                     }
-                }
                 None
             })
             .unwrap_or_default()

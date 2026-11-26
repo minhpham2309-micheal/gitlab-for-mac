@@ -118,9 +118,9 @@ fn source_viewer_renders_5000_lines_guards_binary_and_uses_repo_cache(cx: &mut T
         let big_code: String = (1..=5_000).map(|i| format!("pub fn line_{i}() -> usize {{ {i} }}\n")).collect();
         let cache = cx.global::<RepoCache>().clone();
         let origin = state.read(cx).gitlab.as_ref().unwrap().origin().ascii_serialization();
-        let gen = cache.generation();
+        let generation = cache.generation();
         cache.insert_blob(
-            gen, &origin, 202, "sha-5k",
+            generation, &origin, 202, "sha-5k",
             RepoBlob { sha: Some("sha-5k".into()), size_bytes: big_code.len(), kind: RepoBlobKind::Text(big_code) },
         );
 

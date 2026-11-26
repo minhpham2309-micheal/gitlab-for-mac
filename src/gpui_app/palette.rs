@@ -26,12 +26,12 @@ fn act_item(label: &str, disabled: bool, act: impl Action) -> CommandItem {
         .action(Box::new(act))
 }
 
-pub fn render_palette_overlay(
+pub fn render_palette_overlay<F: Fn(&mut Window, &mut App) + Clone + 'static>(
     cmd_state: &Entity<CommandState>,
     state: &Entity<AppState>,
-    on_close: impl Fn(&mut Window, &mut App) + Clone + 'static,
+    on_close: F,
     cx: &App,
-) -> impl IntoElement {
+) -> impl IntoElement + use<F> {
     let st = state.read(cx);
     let theme = cx.theme();
     let no_proj = st.project.is_none();

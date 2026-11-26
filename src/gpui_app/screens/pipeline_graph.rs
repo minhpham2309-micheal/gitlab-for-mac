@@ -14,7 +14,7 @@ pub fn render_stage_graph(
     bridges: &[BridgeJob],
     selected_job_id: Option<u64>,
     cx: &mut Context<PipelinesView>,
-) -> impl IntoElement {
+) -> impl IntoElement + use<> {
     let theme = cx.theme();
     let dark = theme.is_dark();
     let border = theme.border;

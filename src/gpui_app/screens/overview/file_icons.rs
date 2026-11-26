@@ -30,7 +30,7 @@ pub fn file_accent_color(name: &str, is_dir: bool, dark: bool) -> Hsla {
     }
 }
 
-pub fn render_entry_icon(name: &str, is_dir: bool, cx: &App) -> impl IntoElement {
+pub fn render_entry_icon(name: &str, is_dir: bool, cx: &App) -> impl IntoElement + use<> {
     let dark = cx.theme().is_dark();
     let color = file_accent_color(name, is_dir, dark);
     if is_dir {

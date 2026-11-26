@@ -6,7 +6,7 @@ use gpui_kit::{
 use super::pajamas_theme::status_color;
 use super::state::AppState;
 
-pub fn render_status_bar(state: &AppState, cx: &App) -> impl IntoElement {
+pub fn render_status_bar(state: &AppState, cx: &App) -> impl IntoElement + use<> {
     let theme = cx.theme();
     let dark = theme.is_dark();
     let host = state

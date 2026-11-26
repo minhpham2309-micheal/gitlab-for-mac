@@ -20,7 +20,7 @@ pub fn render_namespace_bar(
     project: &Project,
     app_state: &Entity<AppState>,
     cx: &mut Context<ProjectOverviewView>,
-) -> impl IntoElement {
+) -> impl IntoElement + use<> {
     let theme = cx.theme();
     let segments: Vec<&str> = project.path_with_namespace.split('/').collect();
     let last_ix = segments.len().saturating_sub(1);
@@ -64,7 +64,7 @@ pub fn render_project_header(
     starred: bool,
     client: Option<&GitLab>,
     cx: &mut Context<ProjectOverviewView>,
-) -> impl IntoElement {
+) -> impl IntoElement + use<> {
     let name = detail.map(|d| d.name.as_str()).filter(|s| !s.is_empty()).unwrap_or(&project.name).to_string();
     let av_url = detail.and_then(|d| d.avatar_url.as_deref()).or(project.avatar_url.as_deref());
     let av = render_avatar(av_url, &name, px(40.), client, cx);
