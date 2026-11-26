@@ -1,5 +1,5 @@
 [package]
-name = "glab-mac"
+name = "gitlab-for-mac"
 version = "0.1.0"
 edition = "2024"
 description = "Native macOS GitLab ops console using glab auth"

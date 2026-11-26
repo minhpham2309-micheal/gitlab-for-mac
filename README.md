@@ -10,7 +10,7 @@ A fast, native, GPU-accelerated macOS desktop client for GitLab built in Rust wi
 
 Working across multiple GitLab projects and self-hosted instances in a browser quickly turns into dozens of heavy tabs—especially when reviewing large merge request diffs, tailing long CI/CD logs, or jumping between repositories.
 
-**GitLab for Mac** (`glab-mac`) provides a keyboard-first native workspace with zero Electron overhead:
+**GitLab for Mac** (`gitlab-for-mac`) provides a keyboard-first native workspace with zero Electron overhead:
 
 - **Instant GPU rendering** via GPUI with native macOS feel and Pajamas-inspired Dark & Light themes.
 - **Zero extra login flow** — reads your existing `glab` CLI hosts and tokens directly.
@@ -61,7 +61,7 @@ Because a GitLab client handles personal access tokens and untrusted repository/
 glab auth login
 ```
 
-GitLab for Mac automatically reads hosts and tokens from `glab`'s config file (`~/Library/Application Support/glab-cli/config.yml` or `~/.config/glab-cli/config.yml`). Local UI preferences are stored separately at `~/Library/Application Support/glab-mac/prefs.json`.
+GitLab for Mac automatically reads hosts and tokens from `glab`'s config file (`~/Library/Application Support/glab-cli/config.yml` or `~/.config/glab-cli/config.yml`). Local UI preferences are stored separately at `~/Library/Application Support/gitlab-for-mac/prefs.json`.
 
 ### Build & Run
 
@@ -74,7 +74,7 @@ cargo run
 
 # Optimized release build (LTO + stripped binary)
 cargo build --release
-./target/release/glab-mac
+./target/release/gitlab-for-mac
 ```
 
 ---
@@ -126,7 +126,7 @@ The codebase enforces a clean separation between **pure GitLab/domain logic** (z
 
 | Path | Responsibility |
 |---|---|
-| `src/main.rs`, `src/lib.rs` | Binary entry point (`glab_mac::gpui_app::run`) and library exports |
+| `src/main.rs`, `src/lib.rs` | Binary entry point (`gitlab_for_mac::gpui_app::run`) and library exports |
 | `src/config.rs`, `src/config_parse.rs` | `glab-cli/config.yml` discovery, parsing, and host/origin validation |
 | `src/gitlab/` | Async GitLab REST v4 client (`reqwest` + `rustls`), redirect & media security guards, unified diff parser, ANSI/collapsible job log engine, and API data types |
 | `src/glab.rs` | Bounded async `glab` subprocess execution (30s timeout, 4 MB cap) |

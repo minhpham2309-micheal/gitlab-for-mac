@@ -5,17 +5,17 @@ use gpui_kit::{
     AppContext as _, Bounds, Focusable as _, TestAppContext, WindowBounds, WindowOptions,
 };
 
-use glab_mac::config::HostAuth;
-use glab_mac::gitlab::Project;
-use glab_mac::gpui_app::{
+use gitlab_for_mac::config::HostAuth;
+use gitlab_for_mac::gitlab::Project;
+use gitlab_for_mac::gpui_app::{
     actions::{GoPreferences, MergeMrAction, NavBack, NavForward, TogglePalette, ZoomIn, ZoomReset},
     init_app,
     nav_history::NavTarget,
     shell::AppShell,
     state::AppState,
 };
-use glab_mac::nav::Screen;
-use glab_mac::prefs::Prefs;
+use gitlab_for_mac::nav::Screen;
+use gitlab_for_mac::prefs::Prefs;
 
 fn sample_hosts() -> Vec<HostAuth> {
     vec![

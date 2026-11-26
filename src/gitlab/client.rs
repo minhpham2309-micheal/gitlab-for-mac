@@ -26,13 +26,13 @@ impl GitLab {
         let origin = api_url.origin();
         let api_base = api_url.as_str().trim_end_matches('/').to_string();
         let http = Client::builder()
-            .user_agent("glab-mac/0.1")
+            .user_agent("gitlab-for-mac/0.1")
             .redirect(redirect::Policy::none())
             .connect_timeout(Duration::from_secs(10))
             .timeout(Duration::from_secs(30))
             .build()?;
         let stream_http = Client::builder()
-            .user_agent("glab-mac/0.1")
+            .user_agent("gitlab-for-mac/0.1")
             .redirect(redirect::Policy::none())
             .connect_timeout(Duration::from_secs(10))
             .read_timeout(Duration::from_secs(60))

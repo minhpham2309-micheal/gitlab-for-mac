@@ -1,3 +1,3 @@
 fn main() {
-    glab_mac::gpui_app::run();
+    gitlab_for_mac::gpui_app::run();
 }
