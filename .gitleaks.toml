@@ -1,0 +1,17 @@
+title = "gitlab-for-mac secret scanning config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Allow synthetic test fixtures and lockfile crate checksums"
+paths = [
+  '''Cargo\.lock$''',
+]
+regexes = [
+  '''glpat-fixture-[0-9]+''',
+  '''glpat-test-[a-z0-9]+''',
+  '''glpat-secret''',
+  '''glpat-abc123_XYZ''',
+  '''glrt-999''',
+]

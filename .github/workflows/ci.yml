@@ -1,0 +1,255 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  merge_group:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  ACTIONLINT_VERSION: "1.7.11"
+  ACTIONLINT_SHA256: "900919a84f2229bac68ca9cd4103ea297abc35e9689ebb842c6e34a3d1b01b0a"
+  GITLEAKS_VERSION: "8.30.1"
+  GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+
+jobs:
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      rust: ${{ steps.resolve.outputs.rust }}
+      workflows: ${{ steps.resolve.outputs.workflows }}
+    steps:
+      - name: Filter changed paths
+        id: filter
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          filters: |
+            rust:
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'rust-toolchain.toml'
+              - 'src/**'
+              - 'tests/**'
+              - 'assets/**'
+              - 'fonts/**'
+              - '.github/workflows/ci.yml'
+            workflows:
+              - '.github/workflows/**'
+              - '.github/scripts/**'
+
+      - name: Resolve effective triggers
+        id: resolve
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RUST_CHANGED: ${{ steps.filter.outputs.rust }}
+          WORKFLOWS_CHANGED: ${{ steps.filter.outputs.workflows }}
+        run: |
+          if [[ "$EVENT_NAME" != "pull_request" ]]; then
+            echo "rust=true" >> "$GITHUB_OUTPUT"
+            echo "workflows=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "rust=${RUST_CHANGED:-false}" >> "$GITHUB_OUTPUT"
+            echo "workflows=${WORKFLOWS_CHANGED:-false}" >> "$GITHUB_OUTPUT"
+          fi
+
+  pr-hygiene:
+    name: Hygiene & Policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [changes]
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Run repository hygiene and architecture audit
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: .github/scripts/check-repo-hygiene.sh
+
+      - name: Lint shell scripts with ShellCheck
+        if: needs.changes.outputs.workflows == 'true'
+        shell: bash
+        run: shellcheck .github/scripts/*.sh
+
+      - name: Lint GitHub Actions workflows with actionlint
+        if: needs.changes.outputs.workflows == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          tmp=$(mktemp -d)
+          trap 'rm -rf "$tmp"' EXIT
+          archive="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -fsSL "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${archive}" -o "${tmp}/${archive}"
+          echo "${ACTIONLINT_SHA256}  ${tmp}/${archive}" | sha256sum -c -
+          tar -xzf "${tmp}/${archive}" -C "$tmp" actionlint
+          "${tmp}/actionlint" -color
+
+  security:
+    name: Security & Supply Chain
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Scan commits for leaked secrets (Gitleaks)
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          tmp=$(mktemp -d)
+          trap 'rm -rf "$tmp"' EXIT
+          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${archive}" -o "${tmp}/${archive}"
+          echo "${GITLEAKS_SHA256}  ${tmp}/${archive}" | sha256sum -c -
+          tar -xzf "${tmp}/${archive}" -C "$tmp" gitleaks
+          if [[ "$EVENT_NAME" == "pull_request" && -n "$BASE_SHA" && -n "$HEAD_SHA" ]]; then
+            "${tmp}/gitleaks" git --config=.gitleaks.toml --redact --verbose --log-opts="${BASE_SHA}..${HEAD_SHA}" .
+          else
+            "${tmp}/gitleaks" git --config=.gitleaks.toml --redact --verbose .
+          fi
+
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@893d6ee8d714b6c7dfe2bcd94e5759e9a7958a7e # v2.90.10
+        with:
+          tool: cargo-deny
+
+      - name: Audit advisories, licenses, bans, and sources (cargo-deny)
+        shell: bash
+        run: cargo deny --locked check
+
+  rust-macos:
+    name: macOS Build, Lint & Test
+    runs-on: macos-15
+    timeout-minutes: 25
+    needs: [changes]
+    if: needs.changes.outputs.rust == 'true'
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Rust stable toolchain
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+
+      - name: Cache Cargo registry and build artifacts
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: macos-15-dev
+          cache-on-failure: true
+
+      - name: Verify Rust and Xcode toolchain
+        shell: bash
+        run: |
+          rustc --version
+          cargo --version
+          xcodebuild -version
+
+      - name: Check Cargo.lock sync and Clippy lints
+        shell: bash
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Run unit and headless GPUI integration tests
+        shell: bash
+        run: cargo test --locked
+
+      - name: Verify Rustdoc builds cleanly
+        shell: bash
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+        run: cargo doc --locked --no-deps
+
+      - name: Publish macOS verification summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "### macOS Verification Summary"
+            echo ""
+            echo "- **Runner:** \`macos-15\` (\`$(uname -m)\`)"
+            echo "- **Rust:** \`$(rustc --version)\`"
+            echo "- **Checks:** \`cargo clippy --locked --all-targets -- -D warnings\`, \`cargo test --locked\`, \`cargo doc --locked --no-deps\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  ci-gate:
+    name: CI Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [changes, pr-hygiene, security, rust-macos]
+    if: always()
+    permissions: {}
+    steps:
+      - name: Evaluate required job outcomes
+        shell: bash
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          HYGIENE_RESULT: ${{ needs.pr-hygiene.result }}
+          SECURITY_RESULT: ${{ needs.security.result }}
+          MACOS_RESULT: ${{ needs.rust-macos.result }}
+        run: |
+          set -euo pipefail
+          {
+            echo "## CI Gate Summary"
+            echo ""
+            echo "| Check | Result |"
+            echo "|---|---|"
+            echo "| Detect Changes | \`${CHANGES_RESULT}\` |"
+            echo "| Hygiene & Policy | \`${HYGIENE_RESULT}\` |"
+            echo "| Security & Supply Chain | \`${SECURITY_RESULT}\` |"
+            echo "| macOS Build, Lint & Test | \`${MACOS_RESULT}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          for pair in \
+            "changes:${CHANGES_RESULT}" \
+            "pr-hygiene:${HYGIENE_RESULT}" \
+            "security:${SECURITY_RESULT}"; do
+            name="${pair%%:*}"
+            res="${pair#*:}"
+            if [[ "$res" != "success" ]]; then
+              echo "::error::Required job '${name}' finished with status '${res}'."
+              exit 1
+            fi
+          done
+
+          if [[ "$MACOS_RESULT" != "success" && "$MACOS_RESULT" != "skipped" ]]; then
+            echo "::error::Job 'rust-macos' finished with status '${MACOS_RESULT}'."
+            exit 1
+          fi
