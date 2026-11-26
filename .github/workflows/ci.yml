@@ -1,0 +1,341 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  merge_group:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  ACTIONLINT_VERSION: "1.7.11"
+  ACTIONLINT_SHA256: "900919a84f2229bac68ca9cd4103ea297abc35e9689ebb842c6e34a3d1b01b0a"
+
+jobs:
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      rust: ${{ steps.classify.outputs.rust }}
+      workflows: ${{ steps.classify.outputs.workflows }}
+      packaging: ${{ steps.classify.outputs.packaging }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Classify changed files (fail-closed docs-only denylist)
+        id: classify
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" != "pull_request" ]]; then
+            {
+              echo "rust=true"
+              echo "workflows=true"
+              echo "packaging=true"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Diff PR merge commit against base parent with NUL delimiters to avoid
+          # force-push races, main-branch drift, C-quoting bypasses, and API 3,000-file caps.
+          diff_args=()
+          if git rev-parse --verify -q HEAD^2 >/dev/null 2>&1; then
+            diff_args=(HEAD^1 HEAD)
+          elif [[ -n "$BASE_SHA" && -n "$HEAD_SHA" ]] \
+            && git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null \
+            && git cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null; then
+            diff_args=("${BASE_SHA}...${HEAD_SHA}")
+          else
+            # Fail closed if commit diff cannot be resolved.
+            {
+              echo "rust=true"
+              echo "workflows=true"
+              echo "packaging=true"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          rust="false"
+          workflows="false"
+          packaging="false"
+          file_count=0
+          while IFS= read -r -d '' path; do
+            [[ -z "$path" ]] && continue
+            file_count=$((file_count + 1))
+            lower=$(printf '%s' "$path" | tr '[:upper:]' '[:lower:]')
+            case "$lower" in
+              .github/workflows/*|.github/actions/*|.github/scripts/*|*.sh)
+                workflows="true"
+                ;;
+            esac
+            case "$lower" in
+              .github/scripts/package-macos.sh|.github/scripts/notarize-macos.sh|assets/appicon.icns|readme.md|license)
+                packaging="true"
+                ;;
+            esac
+            # Strict docs-only allowlist: ONLY explicit non-build documentation files skip Rust CI.
+            case "$path" in
+              docs/*.md|AGENTS.md|CHANGELOG.md|CONTRIBUTING.md|SECURITY.md|.github/PULL_REQUEST_TEMPLATE.md|.github/ISSUE_TEMPLATE/*)
+                ;;
+              *)
+                rust="true"
+                ;;
+            esac
+          done < <(git -c core.quotePath=false diff --no-renames -z --name-only "${diff_args[@]}")
+
+          if (( file_count == 0 )); then
+            rust="true"
+            workflows="true"
+            packaging="true"
+          fi
+
+          {
+            echo "rust=${rust}"
+            echo "workflows=${workflows}"
+            echo "packaging=${packaging}"
+          } >> "$GITHUB_OUTPUT"
+
+  pr-hygiene:
+    name: Hygiene & Policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [changes]
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Run repository hygiene and architecture audit
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          commit_range=""
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            if git rev-parse --verify -q HEAD^2 >/dev/null 2>&1; then
+              commit_range="HEAD^1..HEAD^2"
+            elif [[ -n "$BASE_SHA" && -n "$HEAD_SHA" ]]; then
+              commit_range="${BASE_SHA}..${HEAD_SHA}"
+            else
+              echo "::error::Unable to resolve PR commit range (fail-closed)."
+              exit 1
+            fi
+          fi
+          COMMIT_RANGE="$commit_range" .github/scripts/check-repo-hygiene.sh
+
+      - name: Lint all shell scripts recursively with ShellCheck
+        if: needs.changes.outputs.workflows == 'true'
+        shell: bash
+        run: git -c core.quotePath=false ls-files -z '*.sh' | xargs -0 -r shellcheck
+
+      - name: Lint GitHub Actions workflows with actionlint
+        if: needs.changes.outputs.workflows == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          tmp=$(mktemp -d)
+          trap 'rm -rf "$tmp"' EXIT
+          archive="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl --proto '=https' --tlsv1.2 -fsSL \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${archive}" \
+            -o "${tmp}/${archive}"
+          echo "${ACTIONLINT_SHA256}  ${tmp}/${archive}" | sha256sum -c -
+          tar -xzf "${tmp}/${archive}" -C "$tmp" actionlint
+          "${tmp}/actionlint" -color
+
+  security:
+    name: Security & Supply Chain
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Scan commits and working tree for secrets (Gitleaks)
+        uses: ./.github/actions/gitleaks-scan
+        with:
+          mode: ${{ github.event_name == 'pull_request' && 'pr' || 'full' }}
+          base-sha: ${{ github.event.pull_request.base.sha }}
+          head-sha: ${{ github.event.pull_request.head.sha }}
+
+      - name: Audit advisories, licenses, bans, and sources (cargo-deny)
+        uses: ./.github/actions/cargo-deny-check
+
+  rust-macos:
+    name: macOS Build, Lint & Test
+    runs-on: macos-15
+    timeout-minutes: 25
+    needs: [changes]
+    if: needs.changes.outputs.rust == 'true'
+    permissions:
+      contents: read
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "13.0"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup pinned Rust toolchain
+        uses: ./.github/actions/setup-rust
+
+      - name: Restore Cargo build cache (warmed on main)
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: macos-15-dev
+          cache-on-failure: false
+          save-if: ${{ github.event_name == 'merge_group' || github.ref == 'refs/heads/main' }}
+
+      - name: Verify Rust and Xcode toolchain
+        shell: bash
+        run: |
+          rustc --version
+          cargo --version
+          xcodebuild -version
+
+      - name: Check production targets without dev-dependency feature leakage
+        shell: bash
+        run: cargo clippy --locked --lib --bins -- -D warnings
+
+      - name: Check all targets including tests with Clippy
+        shell: bash
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Run unit and headless GPUI integration tests
+        shell: bash
+        run: cargo test --locked
+
+      - name: Verify Rustdoc builds cleanly
+        shell: bash
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+        run: cargo doc --locked --no-deps
+
+      - name: Smoke-test compiled binary startup (--version)
+        shell: bash
+        run: |
+          set -euo pipefail
+          crate_version=$(cargo metadata --no-deps --format-version 1 | jq -er '.packages[] | select(.name == "gitlab-for-mac") | .version')
+          ver_out=$(cargo run --locked -- --version)
+          if [[ "$ver_out" != "gitlab-for-mac ${crate_version}" ]]; then
+            echo "::error::Unexpected --version output: got '${ver_out}', expected 'gitlab-for-mac ${crate_version}'."
+            exit 1
+          fi
+
+      - name: Smoke-test macOS packaging script when modified
+        if: needs.changes.outputs.packaging == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          tmp_dist=$(mktemp -d)
+          trap 'rm -rf "$tmp_dist"' EXIT
+          .github/scripts/package-macos.sh \
+            --binary target/debug/gitlab-for-mac \
+            --version 0.1.0-smoke \
+            --tag smoke \
+            --arch arm64 \
+            --target aarch64-apple-darwin \
+            --build-number 1 \
+            --out-dir "$tmp_dist"
+
+      - name: Publish macOS verification summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "### macOS Verification Summary"
+            echo ""
+            echo "- **Runner:** \`macos-15\` (\`$(uname -m)\`)"
+            echo "- **Rust:** \`$(rustc --version)\`"
+            echo "- **Deployment Target:** macOS \`${MACOSX_DEPLOYMENT_TARGET}\`"
+            echo "- **Checks:** \`clippy --lib --bins\`, \`clippy --all-targets\`, \`cargo test --locked\`, \`cargo doc --no-deps\`, \`--version\` smoke test"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  ci-gate:
+    name: CI Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [changes, pr-hygiene, security, rust-macos]
+    if: always() && !cancelled()
+    permissions: {}
+    steps:
+      - name: Evaluate required job outcomes
+        shell: bash
+        env:
+          RUST_CHANGED: ${{ needs.changes.outputs.rust }}
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          HYGIENE_RESULT: ${{ needs.pr-hygiene.result }}
+          SECURITY_RESULT: ${{ needs.security.result }}
+          MACOS_RESULT: ${{ needs.rust-macos.result }}
+        run: |
+          set -euo pipefail
+          {
+            echo "## CI Gate Summary"
+            echo ""
+            echo "| Check | Result |"
+            echo "|---|---|"
+            echo "| Detect Changes | \`${CHANGES_RESULT}\` |"
+            echo "| Hygiene & Policy | \`${HYGIENE_RESULT}\` |"
+            echo "| Security & Supply Chain | \`${SECURITY_RESULT}\` |"
+            echo "| macOS Build, Lint & Test | \`${MACOS_RESULT}\` (rust=${RUST_CHANGED}) |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          for pair in \
+            "changes:${CHANGES_RESULT}" \
+            "pr-hygiene:${HYGIENE_RESULT}" \
+            "security:${SECURITY_RESULT}"; do
+            name="${pair%%:*}"
+            res="${pair#*:}"
+            if [[ "$res" != "success" ]]; then
+              echo "::error::Required job '${name}' finished with status '${res}'."
+              exit 1
+            fi
+          done
+
+          if [[ "$RUST_CHANGED" == "true" ]]; then
+            if [[ "$MACOS_RESULT" != "success" ]]; then
+              echo "::error::Rust changes detected but 'rust-macos' finished with status '${MACOS_RESULT}'."
+              exit 1
+            fi
+          elif [[ "$RUST_CHANGED" == "false" ]]; then
+            if [[ "$MACOS_RESULT" != "success" && "$MACOS_RESULT" != "skipped" ]]; then
+              echo "::error::Job 'rust-macos' finished with status '${MACOS_RESULT}'."
+              exit 1
+            fi
+          else
+            echo "::error::Unexpected RUST_CHANGED value '${RUST_CHANGED}' (fail-closed)."
+            exit 1
+          fi

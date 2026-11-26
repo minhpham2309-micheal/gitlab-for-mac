@@ -1,0 +1,63 @@
+name: PR Title
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+  merge_group:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: pr-title-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  conventional-title:
+    name: Conventional PR Title
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+    steps:
+      - name: Validate Conventional Commits PR title
+        if: github.event_name == 'pull_request'
+        uses: amannn/action-semantic-pull-request@66e72920af32222769c386d81f89656ebcb6d6d5 # v6.1.4
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            refactor
+            docs
+            test
+            chore
+            ci
+            perf
+            build
+            style
+            revert
+          validateSingleCommit: true
+          validateSingleCommitMatchesPrTitle: true
+
+      - name: Reject AI attribution lines in PR metadata
+        if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          ai_agents='(claude|anthropic|copilot|openai|chatgpt|gemini|antigravity|cursor|codex|aider|cline|windsurf|devin|codeium|opencode|deepseek|qwen|noreply@anthropic\.com)'
+          if printf '%s\n%s\n' "$PR_TITLE" "$PR_BODY" \
+            | grep -iE "^[^[:alnum:]]*(Co-Authored-By|Signed-off-by|Assisted-by|Helped-by|Generated (with|by)):?.*${ai_agents}" >/dev/null 2>&1; then
+            echo "::error::Disallowed AI attribution line detected in PR title or description."
+            exit 1
+          fi
+
+      - name: Merge queue pass-through
+        if: github.event_name == 'merge_group'
+        shell: bash
+        run: echo "PR title was already validated prior to entering merge queue."

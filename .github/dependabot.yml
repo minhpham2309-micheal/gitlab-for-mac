@@ -1,0 +1,42 @@
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(ci)"
+    groups:
+      official-actions:
+        patterns:
+          - "actions/*"
+      third-party-actions:
+        exclude-patterns:
+          - "actions/*"
+
+  - package-ecosystem: "cargo"
+    directory: "/"
+    versioning-strategy: "auto"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    ignore:
+      # Exact-pinned UI framework; upgrade intentionally in dedicated PRs.
+      - dependency-name: "gpui-kit"
+    groups:
+      rust-patch-updates:
+        update-types:
+          - "patch"

@@ -1,0 +1,28 @@
+title = "gitlab-for-mac secret scanning config"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Allow SHA-256 crate checksums in root Cargo.lock only"
+condition = "AND"
+paths = ['''^Cargo\.lock$''']
+regexTarget = "line"
+regexes = ['''^checksum = "[0-9a-f]{64}"$''']
+
+[[allowlists]]
+description = "Allow exact synthetic fixture tokens in designated test files only"
+condition = "AND"
+paths = [
+  '''^tests/gpui_(shell|repo)_tests\.rs$''',
+  '''^src/config\.rs$''',
+  '''^src/gitlab/media\.rs$''',
+  '''^src/gpui_app/screens/ops/console_args\.rs$''',
+]
+regexes = [
+  '''^glpat-fixture-[0-9]+$''',
+  '''^glpat-test-[ab]$''',
+  '''^glpat-secret$''',
+  '''^glpat-abc123_XYZ$''',
+  '''^glrt-999$''',
+]
