@@ -11,7 +11,7 @@ import sys
 FORBIDDEN_CODE_RE = re.compile(
     r"\bgpui_kit\b|\bgpui\s*::|\bgpui_app\b|\binclude\s*!\s*[\(\[\{]"
 )
-FORBIDDEN_PATH_ATTR_RE = re.compile(r"#\s*\[[^\]]*\bpath\s*=", re.DOTALL)
+FORBIDDEN_PATH_ATTR_RE = re.compile(r"#\s*!?\s*\[[^\]]*\bpath\s*=", re.DOTALL)
 TOML_ALIAS_RE = re.compile(r"""package\s*=\s*["']gpui(?:-kit)?["']""")
 
 
@@ -70,8 +70,8 @@ def strip_rust_comments_and_strings(src: str) -> str:
         # Char or byte literal (without consuming lifetimes like 'a or 'static)
         elif ch == "'" and i + 2 < n:
             if src[i + 1] == "\\":
-                out.extend([" ", " "])
-                i += 2
+                out.extend([" ", " ", "\n" if src[i + 2] == "\n" else " "])
+                i += 3
                 while i < n and src[i] != "'" and src[i] != "\n":
                     out.append(" ")
                     i += 1
