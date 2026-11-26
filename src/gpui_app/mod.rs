@@ -72,7 +72,7 @@ pub fn run() {
                 let state = state.clone();
                 cx.new(|cx| AppShell::new(state, window, cx))
             })
-            .expect("failed to open glab-mac window");
+            .expect("failed to open gitlab-for-mac window");
             cx.activate(true);
         });
 }

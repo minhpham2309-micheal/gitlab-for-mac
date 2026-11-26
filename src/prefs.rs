@@ -113,11 +113,18 @@ impl Prefs {
 }
 
 pub fn path() -> Option<PathBuf> {
+    dirs::config_dir().map(|dir| dir.join("gitlab-for-mac").join("prefs.json"))
+}
+
+fn legacy_path() -> Option<PathBuf> {
     dirs::config_dir().map(|dir| dir.join("glab-mac").join("prefs.json"))
 }
 
 pub fn load() -> Prefs {
-    path().map(|p| load_from(&p)).unwrap_or_default()
+    if let Some(p) = path().filter(|p| p.exists()) {
+        return load_from(&p);
+    }
+    legacy_path().map(|p| load_from(&p)).unwrap_or_default()
 }
 
 pub fn load_from(path: &Path) -> Prefs {
