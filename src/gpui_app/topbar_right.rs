@@ -64,6 +64,11 @@ pub fn render_top_bar_right(state: &Entity<AppState>, cx: &mut App) -> impl Into
         .or_else(|| st.active_host.as_ref().and_then(|h| h.user.clone()))
         .unwrap_or_else(|| "U".into());
 
+    let active_host_label = st
+        .active_host
+        .as_ref()
+        .map(|h| h.hostname.clone())
+        .unwrap_or_else(|| "No host".into());
     let perms = st.project_permissions;
     let show_update = st
         .update
@@ -116,17 +121,39 @@ pub fn render_top_bar_right(state: &Entity<AppState>, cx: &mut App) -> impl Into
             refresh_state.update(cx, |s, cx| s.dispatch_command(ScreenCommand::Refresh, cx));
         });
 
-    let pref_state = state.clone();
+    let account_state = state.clone();
+    let account_header = format!("@{user_label} · {active_host_label}");
     let avatar_el = render_avatar(user_avatar.as_deref(), &user_label, px(24.), client.as_ref(), cx);
-    let avatar_btn = div()
-        .id("topbar-user-avatar")
+    let avatar_btn = Button::new("topbar-user-avatar")
+        .ghost()
+        .xsmall()
+        .p_0()
         .rounded_full()
-        .overflow_hidden()
-        .cursor_pointer()
-        .on_click(move |_, _, cx| {
-            pref_state.update(cx, |s, cx| s.set_screen(Screen::Preferences, cx));
-        })
-        .child(avatar_el);
+        .child(avatar_el)
+        .dropdown_menu(move |menu, _, _| {
+            let st_pref = account_state.clone();
+            let st_upd = account_state.clone();
+            let st_add = account_state.clone();
+            let st_out = account_state.clone();
+            menu.item(PopupMenuItem::label(account_header.clone()))
+                .item(PopupMenuItem::separator())
+                .item(PopupMenuItem::new("Preferences (⌘,)").on_click(move |_, _, cx| {
+                    st_pref.update(cx, |s, cx| s.set_screen(Screen::Preferences, cx));
+                }))
+                .item(PopupMenuItem::new("Check for updates").on_click(move |_, _, cx| {
+                    st_upd.update(cx, |s, cx| {
+                        s.open_update_modal(cx);
+                        s.check_for_updates(true, cx);
+                    });
+                }))
+                .item(PopupMenuItem::new("Add / Switch account…").on_click(move |_, _, cx| {
+                    st_add.update(cx, |s, cx| s.open_add_account(cx));
+                }))
+                .item(PopupMenuItem::separator())
+                .item(PopupMenuItem::new("Sign out").on_click(move |_, _, cx| {
+                    st_out.update(cx, |s, cx| s.sign_out(false, cx));
+                }))
+        });
 
     let update_pill = if show_update
         && let Some(label) = update_label

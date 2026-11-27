@@ -17,6 +17,7 @@ pub mod sidebar;
 mod sidebar_footer;
 mod sidebar_project_card;
 pub mod state;
+pub mod state_auth;
 mod state_loaders;
 mod state_nav;
 pub mod state_types;

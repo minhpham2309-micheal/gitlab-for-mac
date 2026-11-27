@@ -1,5 +1,6 @@
 use gpui_kit::Context;
 
+use crate::accounts;
 use crate::config::{self, GlabConfig};
 use crate::gitlab::GitLab;
 use crate::prefs::{self, Prefs};
@@ -37,32 +38,41 @@ impl AppState {
 
     pub fn boot(cx: &mut Context<Self>) -> Self {
         let prefs = prefs::load();
-        match config::load() {
-            Ok(cfg) => Self::from_config(cfg, prefs, cx),
-            Err(err) => {
-                let mut state =
-                    Self::from_parts(Vec::new(), None, Vec::new(), prefs, err.to_string());
-                state.persist_prefs = true;
-                state.offline_mode = false;
-                state.maybe_auto_check_updates(cx);
-                state
-            }
-        }
-    }
+        let discovered = accounts::discover_all();
+        let default_host = config::load().ok().and_then(|c| c.default_host);
+        let cfg = GlabConfig {
+            default_host,
+            hosts: discovered.merged.clone(),
+        };
 
-    fn from_config(cfg: GlabConfig, prefs: Prefs, cx: &mut Context<Self>) -> Self {
-        let picked = config::pick_host(&cfg, prefs.host.as_deref());
-        let mut state = Self::from_parts(cfg.hosts, picked.clone(), Vec::new(), prefs, "Connecting…");
+        let active = if prefs.is_signed_in() {
+            config::pick_host(&cfg, prefs.host.as_deref())
+        } else {
+            None
+        };
+
+        let status = if active.is_some() {
+            "Connecting…"
+        } else {
+            "Sign in to GitLab"
+        };
+        let mut state = Self::from_parts(discovered.merged, active.clone(), Vec::new(), prefs, status);
+        state.auth.saved_hosts = discovered.saved;
+        state.auth.glab_hosts = discovered.glab;
         state.persist_prefs = true;
         state.offline_mode = false;
-        if let Some(host) = picked {
+        if let Some(host) = active {
             match GitLab::new(host) {
                 Ok(client) => {
                     state.status = format!("Signed in on {}", client.host());
                     state.gitlab = Some(client);
                     state.refresh_host_data(cx);
                 }
-                Err(err) => state.status = err.to_string(),
+                Err(err) => {
+                    state.active_host = None;
+                    state.auth.error = Some(err.to_string());
+                    state.status = err.to_string();
+                }
             }
         }
         state.maybe_auto_check_updates(cx);
