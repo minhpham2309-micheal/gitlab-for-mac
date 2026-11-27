@@ -5,6 +5,8 @@
 [![macOS 13+](https://img.shields.io/badge/macOS-13.0%2B-black.svg)](#installation--quick-start)
 [![Canary Release](https://img.shields.io/github/v/release/minhpham2309-micheal/gitlab-for-mac?include_prereleases&label=canary)](https://github.com/minhpham2309-micheal/gitlab-for-mac/releases/tag/canary)
 
+![GitLab for Mac — Native macOS GitLab client in Rust and GPUI](docs/images/hero-banner.png)
+
 A fast, native, GPU-accelerated macOS desktop client for GitLab built in Rust with **GPUI** (`gpui-kit`) — sign in directly with a Personal Access Token or reuse your existing [`glab`](https://gitlab.com/gitlab-org/cli) CLI sessions.
 
 > **Status:** Active early development — bug reports, feature discussions, and pull requests are warmly welcome! Check open [`good first issue`](https://github.com/minhpham2309-micheal/gitlab-for-mac/labels/good%20first%20issue) and [`help wanted`](https://github.com/minhpham2309-micheal/gitlab-for-mac/labels/help%20wanted) issues to jump in.
@@ -191,6 +193,8 @@ cargo build --release
 ---
 
 ## Contributing
+
+![Modular UI-free Rust core and open contributor issues](docs/images/architecture-and-contributing.png)
 
 Contributions of all sizes are welcome—whether it's a bug fix, pure-Rust GitLab API improvement, GPUI screen, distribution helper, or documentation polish.
 
