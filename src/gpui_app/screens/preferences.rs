@@ -183,6 +183,7 @@ impl Render for PreferencesView {
                     .p_4()
                     .child(
                         div()
+                            .w_full()
                             .max_w(px(780.))
                             .mx_auto()
                             .flex()

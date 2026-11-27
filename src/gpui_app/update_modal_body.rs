@@ -30,7 +30,8 @@ pub(super) fn render_phase_body_and_footer(
                 .into_any_element(),
             close_footer(state, false),
         ),
-        UpdatePhase::Idle | UpdatePhase::UpToDate { .. } => render_up_to_date(state, cx),
+        UpdatePhase::Idle => render_up_to_date(None, state, cx),
+        UpdatePhase::UpToDate { note, .. } => render_up_to_date(note.as_deref(), state, cx),
         UpdatePhase::Available(info) => render_available(info, target, state, cx),
         UpdatePhase::Downloading { info, downloaded, total } => {
             render_downloading(info, *downloaded, *total, state, cx)
@@ -52,15 +53,22 @@ pub(super) fn render_phase_body_and_footer(
     }
 }
 
-fn render_up_to_date(state: &Entity<AppState>, cx: &App) -> (AnyElement, AnyElement) {
+fn render_up_to_date(
+    note: Option<&str>,
+    state: &Entity<AppState>,
+    cx: &App,
+) -> (AnyElement, AnyElement) {
     let theme = cx.theme();
     let (st_check, st_close) = (state.clone(), state.clone());
-    let body = div().flex().flex_col().gap_1p5()
-        .child(div().text_sm().text_color(status_color("success", theme.is_dark())).child("You’re up to date"))
-        .child(div().text_xs().text_color(theme.muted_foreground).child(format!(
+    let detail = note.map(str::to_string).unwrap_or_else(|| {
+        format!(
             "GitLab for Mac v{CURRENT_VERSION} ({}) is the latest release on this channel.",
             current_macos_arch()
-        )))
+        )
+    });
+    let body = div().flex().flex_col().gap_1p5()
+        .child(div().text_sm().text_color(status_color("success", theme.is_dark())).child("You’re up to date"))
+        .child(div().text_xs().text_color(theme.muted_foreground).child(detail))
         .into_any_element();
     let footer = div().w_full().flex().items_center().justify_end().gap_2()
         .child(Button::new("update-recheck-btn").outline().small().label("Check again").on_click(move |_, _, cx| {

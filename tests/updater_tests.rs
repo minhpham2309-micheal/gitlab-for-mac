@@ -361,8 +361,13 @@ async fn stable_404_with_canary_prerelease_returns_clear_channel_hint() {
         github_token: None,
         allow_gh_cli_fallback: false,
     };
-    let err = check_for_update(&cfg).await.unwrap_err().to_string();
-    assert!(err.contains("switch Release channel to Canary"), "unexpected error: {err}");
+    let res = check_for_update(&cfg).await.unwrap();
+    match res {
+        UpdateCheckResult::UpToDate { note: Some(note), .. } => {
+            assert!(note.contains("Canary"), "unexpected note: {note}");
+        }
+        other => panic!("expected UpToDate with Canary hint, got {other:?}"),
+    }
 }
 
 #[cfg(target_os = "macos")]

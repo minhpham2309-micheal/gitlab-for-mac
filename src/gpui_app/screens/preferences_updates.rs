@@ -4,7 +4,8 @@ use gpui_kit::{
         spinner::Spinner,
         ActiveTheme as _, Disableable as _, Selectable as _, Sizable as _,
     },
-    div, Context, IntoElement, ParentElement as _, Styled as _,
+    div, Context, InteractiveElement as _, IntoElement, ParentElement as _, Styled as _,
+    TestSupportExt as _,
 };
 
 use crate::prefs::Prefs;
@@ -35,7 +36,8 @@ pub fn render_updates_card(
             theme.muted_foreground,
         ),
         UpdatePhase::Checking => ("Checking GitHub Releases…".into(), theme.muted_foreground),
-        UpdatePhase::UpToDate { .. } => (
+        UpdatePhase::UpToDate { note: Some(note), .. } => (note.clone(), theme.muted_foreground),
+        UpdatePhase::UpToDate { note: None, .. } => (
             format!("v{CURRENT_VERSION} ({}) · Up to date", current_macos_arch()),
             status_color("success", dark),
         ),
@@ -63,6 +65,8 @@ pub fn render_updates_card(
 
     let has_actionable = st.update.info().is_some();
     let version_controls = div()
+        .id("pref-update-controls")
+        .flex_shrink_0()
         .flex()
         .items_center()
         .gap_1p5()
@@ -85,7 +89,8 @@ pub fn render_updates_card(
                 .on_click(cx.listener(|v, _, _, cx| {
                     v.state.update(cx, |s, cx| s.check_for_updates(true, cx));
                 })),
-        );
+        )
+        .test_support();
 
     let blocker_note = match target {
         InstallTarget::WritableBundle(_) => None,
@@ -98,22 +103,27 @@ pub fn render_updates_card(
     };
 
     card_shell("Software Updates", cx)
+        .id("pref-updates-card")
         .child(
             div()
+                .w_full()
+                .min_w_0()
                 .pt_2()
                 .border_t_1()
                 .border_color(theme.border.opacity(0.45))
                 .flex()
-                .items_center()
+                .items_start()
                 .justify_between()
                 .gap_4()
                 .child(
                     div()
+                        .flex_1()
+                        .min_w_0()
                         .flex()
                         .flex_col()
                         .gap_0p5()
                         .child(div().text_sm().text_color(theme.foreground).child(format!("Version v{CURRENT_VERSION}")))
-                        .child(div().text_xs().text_color(status_fg).child(status_text)),
+                        .child(div().min_w_0().text_xs().text_color(status_fg).child(status_text)),
                 )
                 .child(version_controls),
         )
@@ -174,4 +184,5 @@ pub fn render_updates_card(
             cx,
         ))
         .children(blocker_note)
+        .test_support()
 }
