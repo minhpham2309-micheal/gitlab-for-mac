@@ -8,8 +8,8 @@ use gpui_kit::{
     StatefulInteractiveElement as _, Styled as _,
 };
 
-use super::super::pajamas_theme::status_color;
-use super::super::state::AppState;
+use super::super::super::pajamas_theme::status_color;
+use super::super::super::state::AppState;
 
 pub fn render_mr_file_tree(
     diff_state: &Entity<DiffState>,

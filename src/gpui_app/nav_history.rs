@@ -22,6 +22,9 @@ pub enum NavTarget {
     Pipeline {
         pipeline_id: u64,
     },
+    MrDetail {
+        iid: u64,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

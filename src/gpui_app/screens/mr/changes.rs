@@ -13,10 +13,10 @@ use gpui_kit::{
 
 use crate::gitlab::{Discussion, MergeRequest};
 
-use super::super::markdown::{render_markdown_with_uploads, MarkdownProjectContext};
-use super::merge_requests::MergeRequestsView;
-use super::mr_annotations::discussion_line_position;
-use super::mr_changes_chrome::{render_mr_diff_toolbar, render_mr_file_tree};
+use super::super::super::markdown::{render_markdown_with_uploads, MarkdownProjectContext};
+use super::annotations::discussion_line_position;
+use super::changes_chrome::{render_mr_diff_toolbar, render_mr_file_tree};
+use super::MergeRequestsView;
 
 pub fn render_mr_changes(
     view: &MergeRequestsView,

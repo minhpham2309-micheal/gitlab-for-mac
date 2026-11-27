@@ -20,6 +20,7 @@ pub enum ScreenCommand {
     MergeMr,
     CloseMr,
     OpenMr { project_id: u64, iid: u64 },
+    ShowMrList,
     OpenIssue { project_id: u64, iid: u64 },
     OpenRepoFile {
         project_id: u64,

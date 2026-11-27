@@ -72,13 +72,8 @@ impl ImageCache {
         raw_src: &str,
     ) -> Option<CacheEntry> {
         let key = (host_origin.to_string(), project_id, raw_src.to_string());
-        let mut guard = self.inner.write().ok()?;
-        let entry = guard.entries.get(&key).map(|(e, _)| e.clone())?;
-        if let Some(pos) = guard.order.iter().position(|k| k == &key) {
-            guard.order.remove(pos);
-            guard.order.push_back(key);
-        }
-        Some(entry)
+        let guard = self.inner.read().ok()?;
+        guard.entries.get(&key).map(|(e, _)| e.clone())
     }
 
     pub fn get_or_fetch(
@@ -90,15 +85,19 @@ impl ImageCache {
     ) -> Option<Arc<Image>> {
         let origin_key = client.origin().ascii_serialization();
         let key = (origin_key, project_id, raw_src.to_string());
+        if let Ok(guard) = self.inner.read()
+            && let Some((entry, _)) = guard.entries.get(&key)
+        {
+            return match entry {
+                CacheEntry::Ready(img) => Some(img.clone()),
+                CacheEntry::Pending | CacheEntry::Failed(_) => None,
+            };
+        }
         let req_gen = {
-            let mut guard = self.inner.write().ok()?;
-            if let Some((entry, _)) = guard.entries.get(&key).cloned() {
-                if let Some(pos) = guard.order.iter().position(|k| k == &key) {
-                    guard.order.remove(pos);
-                    guard.order.push_back(key);
-                }
+            let guard = self.inner.write().ok()?;
+            if let Some((entry, _)) = guard.entries.get(&key) {
                 return match entry {
-                    CacheEntry::Ready(img) => Some(img),
+                    CacheEntry::Ready(img) => Some(img.clone()),
                     CacheEntry::Pending | CacheEntry::Failed(_) => None,
                 };
             }
