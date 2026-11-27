@@ -44,6 +44,7 @@ impl AppState {
                     Self::from_parts(Vec::new(), None, Vec::new(), prefs, err.to_string());
                 state.persist_prefs = true;
                 state.offline_mode = false;
+                state.maybe_auto_check_updates(cx);
                 state
             }
         }
@@ -64,6 +65,7 @@ impl AppState {
                 Err(err) => state.status = err.to_string(),
             }
         }
+        state.maybe_auto_check_updates(cx);
         state
     }
 

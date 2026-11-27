@@ -16,6 +16,7 @@ use super::super::pajamas_theme::apply_theme_from_prefs;
 use super::super::state::AppState;
 use super::preferences_cards::{render_appearance_card, render_viewer_and_preview_cards};
 use super::preferences_typography::render_typography_card;
+use super::preferences_updates::render_updates_card;
 
 const UI_FONT_CANDIDATES: &[&str] = &[
     "SF Pro Text",
@@ -163,6 +164,7 @@ impl Render for PreferencesView {
                     .on_click(cx.listener(|this, _, w, cx| this.reset_defaults(w, cx))),
             );
 
+        let updates = render_updates_card(self, &prefs, cx);
         let appearance = render_appearance_card(&prefs, cx);
         let typography = render_typography_card(self, &prefs, cx);
         let viewer_preview = render_viewer_and_preview_cards(&prefs, cx);
@@ -186,6 +188,7 @@ impl Render for PreferencesView {
                             .flex()
                             .flex_col()
                             .gap_4()
+                            .child(updates)
                             .child(appearance)
                             .child(typography)
                             .child(viewer_preview),

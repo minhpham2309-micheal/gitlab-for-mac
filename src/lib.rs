@@ -7,3 +7,4 @@ pub mod nav;
 pub mod prefs;
 pub mod runtime;
 pub mod text_util;
+pub mod updater;

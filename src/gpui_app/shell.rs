@@ -29,6 +29,7 @@ use super::sidebar::render_sidebar;
 use super::state::AppState;
 use super::statusbar::render_status_bar;
 use super::topbar::render_top_bar;
+use super::update_modal::render_update_modal;
 
 pub struct AppShell {
     state: Entity<AppState>,
@@ -95,7 +96,9 @@ impl AppShell {
 
     pub fn is_palette_open(&self) -> bool { self.palette_open }
     pub fn is_find_file_open(&self, cx: &gpui_kit::App) -> bool { self.find_file_modal.read(cx).is_open() }
-    pub fn has_overlay_open(&self, cx: &gpui_kit::App) -> bool { self.palette_open || self.is_find_file_open(cx) }
+    pub fn has_overlay_open(&self, cx: &gpui_kit::App) -> bool {
+        self.palette_open || self.is_find_file_open(cx) || self.state.read(cx).update.modal_open
+    }
     pub fn state(&self) -> &Entity<AppState> { &self.state }
     pub fn mrs_view(&self) -> &Entity<MergeRequestsView> { &self.mrs_view }
     pub fn pipelines_view(&self) -> &Entity<PipelinesView> { &self.pipelines_view }
@@ -124,6 +127,7 @@ impl AppShell {
 
     pub(crate) fn dismiss_top_overlay(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
         if self.close_palette_only(window, cx) { return true; }
+        if self.state.update(cx, |s, cx| s.close_update_modal(cx)) { self.focus_handle.focus(window, cx); return true; }
         if self.find_file_modal.update(cx, |m, cx| m.close(cx)) { self.focus_handle.focus(window, cx); return true; }
         false
     }
@@ -174,6 +178,10 @@ impl Render for AppShell {
             )
         });
 
+        let update_modal = self.state.read(cx).update.modal_open.then(|| {
+            render_update_modal(&self.state, cx)
+        });
+
         let root = div().id("glab-app-shell").track_focus(&self.focus_handle).relative()
             .size_full().flex().flex_col().bg(theme.background).text_color(theme.foreground);
 
@@ -185,6 +193,7 @@ impl Render for AppShell {
             )
             .child(status_bar)
             .child(self.find_file_modal.clone())
+            .children(update_modal)
             .children(palette)
     }
 }

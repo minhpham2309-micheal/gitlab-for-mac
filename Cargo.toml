@@ -10,8 +10,10 @@ publish = false
 [dependencies]
 gpui-kit = { version = "=0.11.0", default-features = false, features = ["component", "assets", "syntect"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+semver = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
 thiserror = "2"
 tokio = { version = "1", features = ["fs", "process", "io-util", "rt-multi-thread", "time", "sync", "macros"] }
 dirs = "7"
