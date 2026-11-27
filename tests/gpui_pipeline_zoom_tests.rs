@@ -25,18 +25,31 @@ fn sample_project() -> Project {
     }
 }
 
-fn sample_pipeline() -> Pipeline {
-    Pipeline {
-        id: 4201,
-        iid: Some(12),
-        status: "success".into(),
-        git_ref: "main".into(),
-        sha: "9fabcb25112233445566".into(),
-        web_url: "https://gitlab.example.com/acme/backend/demo-app/-/pipelines/4201".into(),
-        created_at: Some("2026-11-26T08:00:00Z".into()),
-        updated_at: Some("2026-11-26T08:05:00Z".into()),
-        source: Some("push".into()),
-    }
+fn sample_pipelines() -> Vec<Pipeline> {
+    vec![
+        Pipeline {
+            id: 126129,
+            iid: Some(12),
+            status: "success".into(),
+            git_ref: "main".into(),
+            sha: "c4facbf7112233445566".into(),
+            web_url: "https://gitlab.example.com/acme/backend/demo-app/-/pipelines/126129".into(),
+            created_at: Some("2026-11-26T08:00:00Z".into()),
+            updated_at: Some("2026-11-26T08:05:00Z".into()),
+            source: Some("push".into()),
+        },
+        Pipeline {
+            id: 126101,
+            iid: Some(11),
+            status: "success".into(),
+            git_ref: "refs/merge-requests/186/head".into(),
+            sha: "b5eb6151112233445566".into(),
+            web_url: "https://gitlab.example.com/acme/backend/demo-app/-/pipelines/126101".into(),
+            created_at: Some("2026-11-26T07:50:00Z".into()),
+            updated_at: Some("2026-11-26T07:55:00Z".into()),
+            source: Some("merge_request_event".into()),
+        },
+    ]
 }
 
 fn sample_jobs() -> Vec<Job> {
@@ -115,9 +128,23 @@ fn pipeline_stage_graph_zoom_controls_scale_columns_and_clamp(cx: &mut TestAppCo
         win.render_frame(cx);
         assert!(win.try_find("pipeline-graph-zoom-bar").is_none());
 
-        // Populate stage graph -> zoom bar and columns render at 100%.
-        pipes.update(cx, |v, cx| v.set_fixture_stage_graph(sample_pipeline(), sample_jobs(), vec![], cx));
+        // Populate stage graph -> zoom bar, aligned pipeline rows, and columns render at 100%.
+        pipes.update(cx, |v, cx| v.set_fixture_stage_graph(sample_pipelines(), sample_jobs(), vec![], cx));
         win.render_frame(cx);
+
+        // Verify pipeline list rows span full width and names/IDs align cleanly across short & long refs.
+        let row_short = win.find("pipe-row-126129").bounds();
+        let row_long = win.find("pipe-row-126101").bounds();
+        let name_short = win.find("pipe-name-126129").bounds();
+        let name_long = win.find("pipe-name-126101").bounds();
+        let id_short = win.find("pipe-id-126129").bounds();
+        let id_long = win.find("pipe-id-126101").bounds();
+        assert_eq!(row_short.left(), row_long.left());
+        assert_eq!(row_short.right(), row_long.right(), "pipeline rows must span full list width");
+        assert_eq!(name_short.left(), name_long.left(), "pipeline names must align on left edge");
+        assert_eq!(id_short.right(), id_long.right(), "pipeline IDs must align flush-right");
+        assert!(name_long.right() < id_long.left(), "long ref name must not overlap pipeline ID");
+
         assert!(win.find("pipeline-graph-zoom-bar").visible());
         assert_eq!(pipes.read(cx).graph_zoom_pct(), DEFAULT_PIPELINE_GRAPH_ZOOM);
         let w_100 = win.find("stage-col-0").bounds().size.width;

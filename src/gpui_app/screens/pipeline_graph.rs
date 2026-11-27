@@ -49,13 +49,13 @@ impl PipelinesView {
 
     pub fn set_fixture_stage_graph(
         &mut self,
-        pipeline: Pipeline,
+        pipelines: Vec<Pipeline>,
         jobs: Vec<Job>,
         bridges: Vec<BridgeJob>,
         cx: &mut Context<Self>,
     ) {
-        self.pipelines = vec![pipeline.clone()];
-        self.selected_pipeline = Some(pipeline);
+        self.selected_pipeline = pipelines.first().cloned();
+        self.pipelines = pipelines;
         self.jobs = jobs;
         self.bridges = bridges;
         self.sync_summary(cx);
