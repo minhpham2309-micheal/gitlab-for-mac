@@ -96,8 +96,8 @@ fn render_desc_and_reactions(
                 }),
         );
 
-    div().pb_4().flex().flex_col().gap_4()
-        .child(div().id("mr-desc-body").child(desc_block).test_support())
+    div().w_full().pb_4().flex().flex_col().gap_4()
+        .child(div().id("mr-desc-body").w_full().child(desc_block).test_support())
         .child(reactions_bar)
 }
 
@@ -107,9 +107,9 @@ fn render_comment_composer(
 ) -> impl IntoElement + use<> {
     let theme = cx.theme();
     div()
-        .pt_2().pb_6()
+        .w_full().pt_2().pb_6()
         .child(
-            div().p_3().rounded_md().border_1().border_color(theme.border).bg(theme.list_head)
+            div().w_full().p_3().rounded_md().border_1().border_color(theme.border).bg(theme.list_head)
                 .flex().flex_col().gap_2()
                 .child(Input::new(&view.comment_input))
                 .child(
@@ -154,9 +154,9 @@ pub fn render_mr_overview(
     .size_full();
 
     div()
-        .id("mr-overview-scroll").flex_1().min_h_0().px_6().pt_4()
+        .id("mr-overview-scroll").w_full().flex_1().min_h_0().px_6().pt_4().flex().flex_col().items_center()
         .child(
-            div().w_full().max_w(px(1120.)).mx_auto().h_full().flex().flex_row().gap_6()
+            div().w_full().max_w(px(1120.)).flex_1().min_h_0().flex().flex_row().gap_6()
                 .child(div().flex_1().min_w_0().h_full().child(feed))
                 .child(div().id("mr-sidebar-scroll").h_full().overflow_y_scroll().flex_shrink_0().child(sidebar)),
         )

@@ -7,7 +7,7 @@ use gpui_kit::{
         ActiveTheme as _, Disableable as _, Icon, IconName, Sizable as _,
     },
     div, prelude::FluentBuilder as _, px, rgb, uniform_list, ClipboardItem, Context,
-    InteractiveElement as _, IntoElement, ParentElement as _, SharedString,
+    InteractiveElement as _, IntoElement, ListSizingBehavior, ParentElement as _, SharedString,
     StatefulInteractiveElement as _, Styled as _, TestSupportExt as _,
 };
 
@@ -146,10 +146,10 @@ pub fn render_mr_list_view(
     let client_owned = client.cloned();
     let row_weak = cx.entity().downgrade();
     let list_body = if view.list_loading && mrs.is_empty() {
-        div().flex_1().flex().items_center().justify_center().text_sm().text_color(theme.muted_foreground)
+        div().py_12().flex().items_center().justify_center().text_sm().text_color(theme.muted_foreground)
             .child("Loading merge requests…").into_any_element()
     } else if mrs.is_empty() {
-        div().flex_1().flex().items_center().justify_center().text_sm().text_color(theme.muted_foreground)
+        div().py_12().flex().items_center().justify_center().text_sm().text_color(theme.muted_foreground)
             .child("No merge requests match your current filter.").into_any_element()
     } else {
         uniform_list("mr-uniform-list", mrs.len(), move |range, _, cx| {
@@ -157,17 +157,19 @@ pub fn render_mr_list_view(
                 .map(|ix| render_mr_list_row(&mrs[ix], client_owned.as_ref(), row_weak.clone(), cx))
                 .collect()
         })
-        .flex_1()
-        .size_full()
+        .with_sizing_behavior(ListSizingBehavior::Infer)
+        .w_full()
+        .flex_shrink_1()
+        .min_h_0()
         .into_any_element()
     };
 
     let (page, per_page, has_next) = (view.page, view.per_page, view.next_page.is_some());
     let weak_pp = cx.entity().downgrade();
     let footer = div()
-        .w_full().px_6().py_3().border_t_1().border_color(theme.border.opacity(0.45))
+        .id("mr-list-footer").w_full().px_6().py_4().flex_shrink_0().flex().flex_col().items_center()
         .child(
-            div().w_full().max_w(px(1120.)).mx_auto().flex().items_center().justify_between()
+            div().w_full().max_w(px(1120.)).flex().items_center().justify_between()
                 .child(
                     div().flex().items_center().gap_2()
                         .children((page > 1 || has_next).then(|| {
@@ -190,12 +192,13 @@ pub fn render_mr_list_view(
                             menu
                         }),
                 ),
-        );
+        )
+        .test_support();
 
     let top_bar = div()
-        .w_full().px_6().pt_3().pb_2().flex_shrink_0()
+        .w_full().px_6().pt_3().pb_2().flex_shrink_0().flex().flex_col().items_center()
         .child(
-            div().w_full().max_w(px(1120.)).mx_auto().flex().flex_col()
+            div().w_full().max_w(px(1120.)).flex().flex_col()
                 .child(div().w_full().border_b_1().border_color(theme.border).flex().items_end().justify_between().gap_4().child(tabs).child(actions))
                 .child(filter_bar),
         );

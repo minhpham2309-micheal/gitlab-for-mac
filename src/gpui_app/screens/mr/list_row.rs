@@ -81,11 +81,11 @@ pub fn render_mr_list_row(
     }
 
     div()
-        .w_full().h(px(68.)).px_6()
+        .w_full().h(px(68.)).px_6().flex().flex_col().items_center()
         .child(
             div()
                 .id(SharedString::from(format!("mr-list-row-{}", mr.iid)))
-                .w_full().max_w(px(1120.)).mx_auto().h_full().px_2()
+                .w_full().max_w(px(1120.)).h_full().px_2()
                 .border_b_1().border_color(theme.border.opacity(0.6))
                 .cursor_pointer().hover(|s| s.bg(theme.list_hover.opacity(0.45)))
                 .flex().items_center().justify_between().gap_4()

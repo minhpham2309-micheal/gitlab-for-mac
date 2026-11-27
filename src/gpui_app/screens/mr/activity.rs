@@ -70,7 +70,7 @@ pub fn render_activity_header(
 
     div()
         .id("mr-activity-section")
-        .pb_2().flex().flex_col().gap_2()
+        .w_full().pb_2().flex().flex_col().gap_2()
         .child(header)
         .children(err_banner)
         .children(empty)
@@ -100,7 +100,7 @@ pub fn render_activity_entry(
             let head_sha = mr.diff_refs.as_ref().and_then(|r| r.head_sha.as_deref());
             let is_replying = view.replying_to.as_deref() == Some(disc.id.as_str());
             render_discussion_card(disc, head_sha, is_replying, &view.reply_input, md_ctx, client, cx)
-                .map(|c| div().pb_3().child(c).into_any_element())
+                .map(|c| div().w_full().pb_3().child(c).into_any_element())
                 .unwrap_or_else(|| div().into_any_element())
         }
     }
@@ -167,7 +167,7 @@ fn render_system_timeline_item(
 
     div()
         .id(SharedString::from(format!("mr-sys-note-{note_id}")))
-        .flex().flex_row().items_stretch().gap_3().pl_2()
+        .w_full().flex().flex_row().items_stretch().gap_3().pl_2()
         .child(
             div().flex().flex_col().items_center().pt_1().flex_shrink_0()
                 .child(div().size(px(6.)).rounded_full().bg(theme.muted_foreground))

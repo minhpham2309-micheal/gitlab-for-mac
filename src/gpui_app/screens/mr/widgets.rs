@@ -35,7 +35,7 @@ pub fn render_mr_widgets(
     let pipe = mr.head_pipeline.clone().or_else(|| view.mr_pipelines.first().cloned());
     div()
         .id("mr-widgets-stack")
-        .pb_4().flex().flex_col().gap_3()
+        .w_full().pb_4().flex().flex_col().gap_3()
         .children(pipe.map(|p| render_pipeline_widget(view, &p, cx)))
         .child(render_approval_widget(view, mr, cx))
         .child(render_merge_widget(view, mr, cx))

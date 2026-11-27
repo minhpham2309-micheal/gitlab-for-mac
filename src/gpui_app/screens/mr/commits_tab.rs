@@ -52,11 +52,11 @@ pub fn render_mr_commits_tab(
                     Icon::empty().path(status_icon_path(&p.status)).size(px(20.)).text_color(col)
                 });
                 div()
-                    .w_full().h(px(62.)).px_6()
+                    .w_full().h(px(62.)).px_6().flex().flex_col().items_center()
                     .child(
                         div()
                             .id(SharedString::from(format!("mr-commit-row-{ix}")))
-                            .w_full().max_w(px(1120.)).mx_auto().h_full().px_4()
+                            .w_full().max_w(px(1120.)).h_full().px_4()
                             .bg(theme.list_head).border_x_1().border_b_1().border_color(theme.border.opacity(0.6))
                             .hover(|s| s.bg(theme.list_hover.opacity(0.4)))
                             .flex().items_center().justify_between().gap_4()

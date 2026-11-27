@@ -205,6 +205,6 @@ pub fn render_mr_detail_header(
         );
 
     div()
-        .w_full().px_6().pt_4()
-        .child(div().w_full().max_w(px(1120.)).mx_auto().flex().flex_col().child(title_row).child(meta_row).child(tabs_row))
+        .w_full().px_6().pt_4().flex().flex_col().items_center()
+        .child(div().w_full().max_w(px(1120.)).flex().flex_col().child(title_row).child(meta_row).child(tabs_row))
 }

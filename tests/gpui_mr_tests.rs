@@ -183,12 +183,17 @@ fn mr_list_and_detail_match_gitlab_layout_and_navigation(cx: &mut TestAppContext
         let new_btn = win.find("mr-new-btn").bounds();
         let filter_bar = win.find("mr-filter-bar").bounds();
         let row = win.find("mr-list-row-53").bounds();
+        let footer = win.find("mr-list-footer").bounds();
 
         assert!(bc.bottom() <= tab_open.top());
         assert!(tab_open.right() <= tab_merged.left());
         assert!(tab_merged.right() <= new_btn.left());
         assert!(tab_open.bottom() <= filter_bar.top());
         assert!(filter_bar.bottom() <= row.top());
+        assert_eq!(filter_bar.left(), row.left());
+        assert_eq!(filter_bar.right(), row.right());
+        // Footer ("Show 20 items") sits directly below the last MR row, not pinned to window bottom.
+        assert!(footer.top() >= row.bottom() && (footer.top() - row.bottom()) <= px(24.), "footer={footer:?} too far below row={row:?}");
 
         win.click("mr-tab-merged", cx);
         assert_eq!(mrs_view.read(cx).filter(), MrFilter::Merged);
@@ -215,6 +220,7 @@ fn mr_list_and_detail_match_gitlab_layout_and_navigation(cx: &mut TestAppContext
         let widgets = win.find("mr-widgets-stack").bounds();
         let activity = win.find("mr-activity-section").bounds();
         let sidebar = win.find("mr-metadata-sidebar").bounds();
+        let todo = win.find("mr-add-todo").bounds();
 
         assert!(win.find("mr-widget-pipeline").visible());
         assert!(win.find("mr-widget-approval").visible());
@@ -222,8 +228,14 @@ fn mr_list_and_detail_match_gitlab_layout_and_navigation(cx: &mut TestAppContext
         assert!(title.bottom() <= desc.top());
         assert!(desc.bottom() <= widgets.top());
         assert!(widgets.bottom() <= activity.top());
-        // Two-column Overview layout: main column is strictly to the left of right metadata sidebar.
-        assert!(widgets.right() <= sidebar.left(), "widgets={widgets:?} overlaps sidebar={sidebar:?}");
+        // All main-column items inside virtualized list must span full main-column width cleanly up to sidebar gap.
+        assert_eq!(desc.left(), title.left());
+        assert_eq!(widgets.left(), title.left());
+        assert_eq!(activity.left(), title.left());
+        assert_eq!(desc.size.width, widgets.size.width, "desc width shrank vs widgets");
+        assert_eq!(activity.size.width, widgets.size.width, "activity width shrank vs widgets");
+        assert!((sidebar.left() - widgets.right() - px(24.)).abs() <= px(1.), "gap between widgets={widgets:?} and sidebar={sidebar:?} drifted");
+        assert_eq!(sidebar.right(), todo.right(), "sidebar right edge misaligned with header right edge");
 
         // 3. Switch detail tabs (Overview -> Commits -> Pipelines -> Changes -> Overview).
         win.click("mr-detail-tab-1", cx);
