@@ -1,3 +1,4 @@
+pub mod accounts;
 pub mod config;
 mod config_parse;
 pub mod gitlab;

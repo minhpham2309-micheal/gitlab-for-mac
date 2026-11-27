@@ -12,6 +12,7 @@ use super::palette::render_palette_overlay;
 use super::screens::{
     code_refs::{BranchesView, CommitsView, TagsView},
     issues::IssuesView,
+    login::LoginView,
     merge_requests::MergeRequestsView,
     ops::{
         console::ConsoleView, releases::ReleasesView, runners::RunnersView,
@@ -50,6 +51,7 @@ pub struct AppShell {
     search_view: Entity<SearchView>,
     console_view: Entity<ConsoleView>,
     preferences_view: Entity<PreferencesView>,
+    login_view: Entity<LoginView>,
     find_file_modal: Entity<FindFileModal>,
     palette_open: bool,
     focus_handle: FocusHandle,
@@ -86,6 +88,7 @@ impl AppShell {
             search_view: cx.new(|cx| SearchView::new(s.clone(), window, cx)),
             console_view: cx.new(|cx| ConsoleView::new(s.clone(), window, cx)),
             preferences_view: cx.new(|cx| PreferencesView::new(s.clone(), window, cx)),
+            login_view: cx.new(|cx| LoginView::new(s.clone(), window, cx)),
             find_file_modal: cx.new(|cx| FindFileModal::new(s.clone(), window, cx)),
             palette_open: false,
             focus_handle: cx.focus_handle(),
@@ -129,6 +132,11 @@ impl AppShell {
         if self.close_palette_only(window, cx) { return true; }
         if self.state.update(cx, |s, cx| s.close_update_modal(cx)) { self.focus_handle.focus(window, cx); return true; }
         if self.find_file_modal.update(cx, |m, cx| m.close(cx)) { self.focus_handle.focus(window, cx); return true; }
+        if self.state.read(cx).auth.adding_account {
+            self.state.update(cx, |s, cx| s.cancel_add_account(cx));
+            self.focus_handle.focus(window, cx);
+            return true;
+        }
         false
     }
 
@@ -161,10 +169,22 @@ impl AppShell {
 
 impl Render for AppShell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = cx.theme();
+        let update_modal = self.state.read(cx).update.modal_open.then(|| {
+            render_update_modal(&self.state, cx)
+        });
+        let root = div().id("glab-app-shell").track_focus(&self.focus_handle).relative()
+            .size_full().flex().flex_col().bg(theme.background).text_color(theme.foreground);
+
+        if !self.state.read(cx).is_authenticated() {
+            return attach_shell_actions(root, cx)
+                .child(self.login_view.clone())
+                .children(update_modal);
+        }
+
         let sidebar = render_sidebar(&self.state, cx);
         let top_bar = render_top_bar(&self.state, window, cx);
         let status_bar = render_status_bar(self.state.read(cx), cx);
-        let theme = cx.theme();
         let shell_weak = cx.entity().downgrade();
         let palette = self.palette_open.then(|| {
             let weak = shell_weak.clone();
@@ -177,13 +197,6 @@ impl Render for AppShell {
                 cx,
             )
         });
-
-        let update_modal = self.state.read(cx).update.modal_open.then(|| {
-            render_update_modal(&self.state, cx)
-        });
-
-        let root = div().id("glab-app-shell").track_focus(&self.focus_handle).relative()
-            .size_full().flex().flex_col().bg(theme.background).text_color(theme.foreground);
 
         attach_shell_actions(root, cx)
             .child(top_bar)

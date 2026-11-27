@@ -14,6 +14,7 @@ use crate::prefs::{Prefs, DEFAULT_MONO_FONT, DEFAULT_UI_FONT};
 
 use super::super::pajamas_theme::apply_theme_from_prefs;
 use super::super::state::AppState;
+use super::preferences_account::render_account_card;
 use super::preferences_cards::{render_appearance_card, render_viewer_and_preview_cards};
 use super::preferences_typography::render_typography_card;
 use super::preferences_updates::render_updates_card;
@@ -164,6 +165,7 @@ impl Render for PreferencesView {
                     .on_click(cx.listener(|this, _, w, cx| this.reset_defaults(w, cx))),
             );
 
+        let account = render_account_card(self, cx);
         let updates = render_updates_card(self, &prefs, cx);
         let appearance = render_appearance_card(&prefs, cx);
         let typography = render_typography_card(self, &prefs, cx);
@@ -189,6 +191,7 @@ impl Render for PreferencesView {
                             .flex()
                             .flex_col()
                             .gap_4()
+                            .child(account)
                             .child(updates)
                             .child(appearance)
                             .child(typography)

@@ -131,6 +131,12 @@ pub fn attach_shell_actions(
                 s.check_for_updates(true, cx);
             });
         }))
+        .on_action(cx.listener(|this, _: &AddAccount, _, cx| {
+            this.state().update(cx, |s, cx| s.open_add_account(cx));
+        }))
+        .on_action(cx.listener(|this, _: &SignOut, _, cx| {
+            this.state().update(cx, |s, cx| s.sign_out(false, cx));
+        }))
         .on_action(cx.listener(|this, _: &OpenInBrowser, window, cx| {
             let url = this.state().read(cx).summary.active_web_url.clone();
             if let Some(url) = url {

@@ -60,6 +60,8 @@ pub struct Prefs {
     pub last_update_check_epoch: Option<u64>,
     #[serde(default)]
     pub installed_canary_id: Option<String>,
+    #[serde(default)]
+    pub signed_in: Option<bool>,
 }
 
 impl Prefs {
@@ -113,6 +115,10 @@ impl Prefs {
 
     pub fn auto_check_updates(&self) -> bool {
         self.auto_check_updates.unwrap_or(true)
+    }
+
+    pub fn is_signed_in(&self) -> bool {
+        self.signed_in.unwrap_or(false)
     }
 
     pub fn pinned(&self) -> Vec<crate::nav::Screen> {

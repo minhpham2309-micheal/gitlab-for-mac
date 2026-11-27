@@ -47,6 +47,8 @@ gpui_kit::actions!(
         MergeMrAction,
         CloseMrAction,
         CheckForUpdates,
+        AddAccount,
+        SignOut,
     ]
 );
 

@@ -6,6 +6,7 @@ use gpui_kit::{
     AppContext as _, Bounds, Focusable as _, TestAppContext, WindowBounds, WindowOptions,
 };
 
+use gitlab_for_mac::config::HostAuth;
 use gitlab_for_mac::gpui_app::{
     actions::{CheckForUpdates, DismissOverlay},
     init_app,
@@ -39,8 +40,15 @@ fn sample_update() -> UpdateInfo {
 fn mount_shell(cx: &mut TestAppContext) -> (gpui_kit::AnyWindowHandle, gpui_kit::Entity<AppShell>) {
     cx.update(init_app);
     cx.update(|cx| {
+        let host = HostAuth {
+            hostname: "gitlab.example.com".into(),
+            api_host: "gitlab.example.com".into(),
+            api_protocol: "https".into(),
+            token: "test-token-fixture".into(),
+            user: Some("alice".into()),
+        };
         let state = cx.new(|_| {
-            AppState::from_parts(Vec::new(), None, Vec::new(), Prefs::default(), "Ready")
+            AppState::from_parts(vec![host.clone()], Some(host), Vec::new(), Prefs::default(), "Ready")
         });
         let bounds = Bounds::new(gpui_kit::point(px(0.), px(0.)), size(px(1280.), px(800.)));
         gpui_kit::open_window(
