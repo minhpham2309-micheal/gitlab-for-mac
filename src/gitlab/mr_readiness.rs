@@ -179,7 +179,7 @@ mod tests {
             diverged_commits_count: None, rebase_in_progress: None,
             should_remove_source_branch: None, force_remove_source_branch: None,
             squash: None, blocking_discussions_resolved: None, merged_by: None,
-            merged_at: None, closed_by: None, closed_at: None, sha: None,
+            merged_at: None, closed_by: None, closed_at: None, sha: None, user: None,
         };
         assert_eq!(mr_merge_readiness(&base).tone, MergeReadinessTone::Ready);
 

@@ -14,12 +14,14 @@ use super::super::pajamas_theme::status_color;
 use super::super::safe_url::safe_open_url;
 use super::pipelines::PipelinesView;
 
+#[allow(clippy::too_many_arguments)]
 pub fn render_job_log_header(
     job: &Job,
     line_count: usize,
     auto_scroll: bool,
     wrap_lines: bool,
     has_selection: bool,
+    can_run_ci: bool,
     cx: &mut Context<PipelinesView>,
 ) -> impl IntoElement + use<> {
     let theme = cx.theme();
@@ -104,21 +106,21 @@ pub fn render_job_log_header(
                         .label("Copy")
                         .on_click(cx.listener(|this, _, _, cx| this.copy_all_log(cx))),
                 )
-                .child(
+                .children(can_run_ci.then(|| {
                     Button::new("log-retry")
                         .ghost()
                         .xsmall()
                         .label("Retry")
-                        .on_click(cx.listener(move |this, _, _, cx| this.run_job_action(job_id, "retry", cx))),
-                )
-                .children(live.then(|| {
+                        .on_click(cx.listener(move |this, _, _, cx| this.run_job_action(job_id, "retry", cx)))
+                }))
+                .children((can_run_ci && live).then(|| {
                     Button::new("log-cancel")
                         .danger()
                         .xsmall()
                         .label("Cancel")
                         .on_click(cx.listener(move |this, _, _, cx| this.run_job_action(job_id, "cancel", cx)))
                 }))
-                .children((job.status == "manual").then(|| {
+                .children((can_run_ci && job.status == "manual").then(|| {
                     Button::new("log-play")
                         .primary()
                         .xsmall()

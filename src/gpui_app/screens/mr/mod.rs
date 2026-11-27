@@ -33,7 +33,7 @@ use gpui_kit::{
 
 use crate::gitlab::{
     AwardEmoji, BridgeJob, Discussion, Job, MergeRequest, MrActivityFilter, MrApprovals, MrFilter,
-    MrListCounts, MrSortField, Pipeline, RawDiff, RepoCommit, SortDir, User,
+    MrListCounts, MrPermissions, MrSortField, Pipeline, RawDiff, RepoCommit, SortDir, User,
 };
 use crate::nav::Screen;
 
@@ -127,6 +127,11 @@ impl MergeRequestsView {
                 this.reset_state(cx);
                 if this.state.read(cx).screen == Screen::MergeRequests { this.load_list(cx); }
             }
+            AppEvent::PermissionsChanged => {
+                this.sync_summary(cx);
+                this.overview_list.remeasure();
+                cx.notify();
+            }
             AppEvent::ScreenChanged { screen } if *screen == Screen::MergeRequests => {
                 if this.mrs.is_empty() && !this.list_loading { this.load_list(cx); }
                 this.sync_summary(cx);
@@ -171,6 +176,12 @@ impl MergeRequestsView {
     pub fn selected_mr(&self) -> Option<&MergeRequest> { self.selected.as_ref() }
     pub fn active_tab(&self) -> usize { self.active_tab }
     pub fn filter(&self) -> MrFilter { self.filter }
+
+    pub(crate) fn mr_permissions(&self, mr: &MergeRequest, cx: &gpui_kit::App) -> MrPermissions {
+        let st = self.state.read(cx);
+        let me = st.current_user.as_ref().map(|u| u.id);
+        st.project_permissions.mr_permissions(mr, self.approvals.as_ref(), me)
+    }
 
     pub fn toggle_diff_mode(&mut self, cx: &mut Context<Self>) {
         let next = if self.diff_state.read(cx).mode() == DiffMode::Split { DiffMode::Unified } else { DiffMode::Split };

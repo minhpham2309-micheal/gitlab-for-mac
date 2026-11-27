@@ -2,6 +2,7 @@
 
 use serde::Deserialize;
 
+use super::permissions::ProjectPermissionsRaw;
 use super::types_repo::RepoTreeEntry;
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -61,6 +62,10 @@ pub struct ProjectDetail {
     pub statistics: Option<ProjectStatistics>,
     #[serde(default)]
     pub license: Option<ProjectLicense>,
+    #[serde(default)]
+    pub archived: bool,
+    #[serde(default)]
+    pub permissions: Option<ProjectPermissionsRaw>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

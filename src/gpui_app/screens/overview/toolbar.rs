@@ -106,18 +106,21 @@ pub fn render_repo_toolbar(
     let web_new = web_base.clone();
     let ref_new = ref_enc.clone();
 
-    let plus_btn = Button::new("ov-repo-plus")
-        .outline()
-        .small()
-        .icon(Icon::new(IconName::Plus).size_3p5())
-        .dropdown_menu(move |menu, _, _| {
-            let new_file = format!("{web_new}/-/new/{ref_new}");
-            let new_branch = format!("{web_new}/-/branches/new");
-            let new_tag = format!("{web_new}/-/tags/new");
-            menu.item(PopupMenuItem::new("New file (Web)").on_click(move |_, _, _| { let _ = safe_open_url(&new_file); }))
-                .item(PopupMenuItem::new("New branch (Web)").on_click(move |_, _, _| { let _ = safe_open_url(&new_branch); }))
-                .item(PopupMenuItem::new("New tag (Web)").on_click(move |_, _, _| { let _ = safe_open_url(&new_tag); }))
-        });
+    let can_push = view.state.read(cx).project_permissions.can_push_code();
+    let plus_btn = can_push.then(|| {
+        Button::new("ov-repo-plus")
+            .outline()
+            .small()
+            .icon(Icon::new(IconName::Plus).size_3p5())
+            .dropdown_menu(move |menu, _, _| {
+                let new_file = format!("{web_new}/-/new/{ref_new}");
+                let new_branch = format!("{web_new}/-/branches/new");
+                let new_tag = format!("{web_new}/-/tags/new");
+                menu.item(PopupMenuItem::new("New file (Web)").on_click(move |_, _, _| { let _ = safe_open_url(&new_file); }))
+                    .item(PopupMenuItem::new("New branch (Web)").on_click(move |_, _, _| { let _ = safe_open_url(&new_branch); }))
+                    .item(PopupMenuItem::new("New tag (Web)").on_click(move |_, _, _| { let _ = safe_open_url(&new_tag); }))
+            })
+    });
 
     let code_btn = Button::new("ov-code-btn")
         .primary()
@@ -164,7 +167,7 @@ pub fn render_repo_toolbar(
                 .items_center()
                 .gap_1p5()
                 .flex_shrink_0()
-                .child(plus_btn)
+                .children(plus_btn)
                 .child(
                     Button::new("ov-find-file")
                         .outline()

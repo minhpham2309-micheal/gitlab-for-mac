@@ -1,7 +1,7 @@
 use gpui_kit::{Context, EventEmitter, Task};
 
 use crate::config::HostAuth;
-use crate::gitlab::{GitLab, Project, User};
+use crate::gitlab::{GitLab, Project, ProjectPermissions, User};
 use crate::nav::{NavSection, Screen};
 use crate::prefs::{self, Prefs};
 
@@ -15,6 +15,7 @@ pub struct AppState {
     pub current_user: Option<User>,
     pub projects: Vec<Project>,
     pub project: Option<Project>,
+    pub project_permissions: ProjectPermissions,
     pub active_ref: Option<String>,
     pub screen: Screen,
     pub history: NavHistory,
@@ -56,6 +57,7 @@ impl AppState {
             current_user: None,
             projects,
             project: None,
+            project_permissions: ProjectPermissions::unknown(),
             active_ref: None,
             screen: Screen::Projects,
             history: NavHistory::new(NavEntry::screen(None, Screen::Projects)),
@@ -100,6 +102,7 @@ impl AppState {
         self.current_user = None;
         self.projects.clear();
         self.project = None;
+        self.project_permissions = ProjectPermissions::unknown();
         self.active_ref = None;
         self.counts = SidebarCounts::default();
         self.summary = ScreenContextSummary::default();
@@ -137,6 +140,7 @@ impl AppState {
         self.counts.live_pipelines = 0;
         self.active_ref = project.default_branch.clone().filter(|s| !s.is_empty());
         self.project = Some(project);
+        self.project_permissions = ProjectPermissions::unknown();
         self.screen = screen;
         self.reveal_nav();
         self.save_prefs();
@@ -174,6 +178,14 @@ impl AppState {
         cx.emit(AppEvent::PrefsChanged);
         cx.notify();
         self.prefs.clone()
+    }
+
+    pub fn set_project_permissions(&mut self, perms: ProjectPermissions, cx: &mut Context<Self>) {
+        if self.project_permissions != perms {
+            self.project_permissions = perms;
+            cx.emit(AppEvent::PermissionsChanged);
+            cx.notify();
+        }
     }
 
     pub fn set_status(&mut self, status: impl Into<String>, cx: &mut Context<Self>) {

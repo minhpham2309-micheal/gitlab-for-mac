@@ -1,6 +1,7 @@
 use gpui_kit::Context;
 
 use crate::gitlab::repo_tree_util::merge_last_commits;
+use crate::gitlab::ProjectPermissions;
 use crate::runtime::spawn_tokio;
 
 use super::super::super::repo_cache::{CachedProjectMeta, CachedTree, RepoCache};
@@ -17,9 +18,11 @@ impl ProjectOverviewView {
         let cache_gen = cache.as_ref().map(RepoCache::generation).unwrap_or(0);
         if !force
             && let Some(meta) = cache.as_ref().and_then(|c| c.get_meta(&origin, project.id)) {
+                let perms = ProjectPermissions::from_detail(&meta.detail);
                 self.detail = Some(meta.detail);
                 self.languages = meta.languages;
                 self.counts = meta.counts;
+                self.state.update(cx, |s, cx| s.set_project_permissions(perms, cx));
                 cx.notify();
             }
         self.meta_task = Some(cx.spawn(async move |this, cx| {
@@ -46,6 +49,8 @@ impl ProjectOverviewView {
                     if counts.releases.is_some() { v.counts.releases = counts.releases; }
                     if let Some(d) = det {
                         v.detail = Some(d.clone());
+                        let perms = ProjectPermissions::from_detail(&d);
+                        v.state.update(cx, |s, cx| s.set_project_permissions(perms, cx));
                         if let Some(c) = cache.as_ref() {
                             c.insert_meta(cache_gen, &origin, project.id, CachedProjectMeta {
                                 detail: d, languages: v.languages.clone(), counts: v.counts.clone(),

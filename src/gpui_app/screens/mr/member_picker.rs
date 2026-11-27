@@ -28,6 +28,10 @@ impl MergeRequestsView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if !self.selected.as_ref().is_some_and(|m| self.mr_permissions(m, cx).can_edit_metadata) {
+            self.member_picker = None;
+            return;
+        }
         if self.member_picker == Some(kind) {
             self.member_picker = None;
             cx.notify();
@@ -68,6 +72,7 @@ impl MergeRequestsView {
     }
 
     pub fn toggle_mr_member(&mut self, kind: MemberPickerKind, user: User, cx: &mut Context<Self>) {
+        if !self.selected.as_ref().is_some_and(|m| self.mr_permissions(m, cx).can_edit_metadata) { return; }
         let Some(mr) = self.selected.as_mut() else { return; };
         let list = match kind {
             MemberPickerKind::Assignees => &mut mr.assignees,
@@ -83,6 +88,7 @@ impl MergeRequestsView {
     }
 
     pub fn clear_mr_members(&mut self, kind: MemberPickerKind, cx: &mut Context<Self>) {
+        if !self.selected.as_ref().is_some_and(|m| self.mr_permissions(m, cx).can_edit_metadata) { return; }
         let Some(mr) = self.selected.as_mut() else { return; };
         match kind {
             MemberPickerKind::Assignees => mr.assignees.clear(),
