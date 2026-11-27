@@ -20,6 +20,7 @@ impl MergeRequestsView {
         self.cached_activity.clear();
         self.overview_list.reset(4);
         self.participants.clear();
+        self.member_picker = None;
         self.award_emojis.clear();
         self.todo_added = false;
         self.raw_diffs.clear();
@@ -33,8 +34,10 @@ impl MergeRequestsView {
     }
 
     pub(crate) fn reset_state(&mut self, cx: &mut Context<Self>) {
-        (self.list_task, self.counts_task) = (None, None);
+        (self.list_task, self.counts_task, self.members_task) = (None, None, None);
         self.mrs.clear();
+        self.project_members.clear();
+        (self.members_loading, self.members_loaded) = (false, false);
         self.counts = MrListCounts::default();
         self.page = 1;
         self.next_page = None;

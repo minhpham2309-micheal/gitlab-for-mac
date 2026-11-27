@@ -13,6 +13,7 @@ mod discussion_card;
 mod edit_dialog;
 mod list_row;
 mod list_view;
+mod member_picker;
 mod merge_widget;
 mod mutations;
 mod overview;
@@ -45,6 +46,7 @@ use self::changes::render_mr_changes;
 use self::commits_tab::render_mr_commits_tab;
 use self::detail_header::render_mr_detail_header;
 use self::list_view::render_mr_list_view;
+use self::member_picker::MemberPickerKind;
 use self::overview::render_mr_overview;
 use self::pipelines_tab::render_mr_pipelines_tab;
 
@@ -77,6 +79,11 @@ pub struct MergeRequestsView {
     pub(crate) cached_activity: Vec<ActivityEntry>,
     pub(crate) overview_list: ListState,
     pub(crate) participants: Vec<User>,
+    pub(crate) project_members: Vec<User>,
+    pub(crate) members_loading: bool,
+    pub(crate) members_loaded: bool,
+    pub(crate) member_picker: Option<MemberPickerKind>,
+    pub(crate) member_filter_input: Entity<InputState>,
     pub(crate) award_emojis: Vec<AwardEmoji>,
     pub(crate) todo_added: bool,
     pub(crate) activity_filter: MrActivityFilter,
@@ -95,6 +102,7 @@ pub struct MergeRequestsView {
     pub(crate) list_task: Option<Task<()>>,
     pub(crate) counts_task: Option<Task<()>>,
     pub(crate) detail_task: Option<Task<()>>,
+    pub(crate) members_task: Option<Task<()>>,
     pub(crate) mutation_task: Option<Task<()>>,
     _subs: Vec<Subscription>,
 }
@@ -107,6 +115,10 @@ impl MergeRequestsView {
         let comment_input = cx.new(|cx| InputState::new(window, cx).placeholder("Write a comment…"));
         let reply_input = cx.new(|cx| InputState::new(window, cx).placeholder("Reply to thread…"));
         let inline_input = cx.new(|cx| InputState::new(window, cx).placeholder("Add inline review comment…"));
+        let member_filter_input = cx.new(|cx| InputState::new(window, cx).placeholder("Search users…"));
+        let sub_member = cx.subscribe_in(&member_filter_input, window, |_, _, ev: &InputEvent, _, cx| {
+            if matches!(ev, InputEvent::Change) { cx.notify(); }
+        });
         let sub_search = cx.subscribe_in(&search_input, window, |this, _, ev: &InputEvent, _, cx| {
             if matches!(ev, InputEvent::PressEnter { .. }) { this.submit_search(cx); }
         });
@@ -143,18 +155,20 @@ impl MergeRequestsView {
             head_pipeline_jobs: Vec::new(), head_pipeline_bridges: Vec::new(),
             cached_stages: Vec::new(), cached_activity: Vec::new(),
             overview_list: ListState::new(4, ListAlignment::Top, px(240.)),
-            participants: Vec::new(), award_emojis: Vec::new(), todo_added: false,
-            activity_filter: MrActivityFilter::All, activity_desc: false,
+            participants: Vec::new(), project_members: Vec::new(), members_loading: false,
+            members_loaded: false, member_picker: None, member_filter_input, award_emojis: Vec::new(),
+            todo_added: false, activity_filter: MrActivityFilter::All, activity_desc: false,
             raw_diffs: Vec::new(), fallback_notices: Vec::new(), has_truncated: false,
             diff_state, discussions: Vec::new(), discussions_error: None,
             inline_target: None, replying_to: None, comment_input, reply_input, inline_input,
-            list_task: None, counts_task: None, detail_task: None, mutation_task: None,
-            _subs: vec![sub_search, sub],
+            list_task: None, counts_task: None, detail_task: None, members_task: None,
+            mutation_task: None, _subs: vec![sub_search, sub_member, sub],
         }
     }
 
     pub fn diff_mode(&self, cx: &gpui_kit::App) -> DiffMode { self.diff_state.read(cx).mode() }
     pub fn selected_iid(&self) -> Option<u64> { self.selected.as_ref().map(|m| m.iid) }
+    pub fn selected_mr(&self) -> Option<&MergeRequest> { self.selected.as_ref() }
     pub fn active_tab(&self) -> usize { self.active_tab }
     pub fn filter(&self) -> MrFilter { self.filter }
 
