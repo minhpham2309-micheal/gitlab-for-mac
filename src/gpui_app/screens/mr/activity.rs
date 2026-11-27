@@ -99,7 +99,11 @@ pub fn render_activity_entry(
             };
             let head_sha = mr.diff_refs.as_ref().and_then(|r| r.head_sha.as_deref());
             let is_replying = view.replying_to.as_deref() == Some(disc.id.as_str());
-            render_discussion_card(disc, head_sha, is_replying, &view.reply_input, md_ctx, client, cx)
+            let perms = view.mr_permissions(mr, cx);
+            render_discussion_card(
+                disc, head_sha, is_replying, perms.can_resolve_discussions, perms.can_comment,
+                &view.reply_input, md_ctx, client, cx,
+            )
                 .map(|c| div().w_full().pb_3().child(c).into_any_element())
                 .unwrap_or_else(|| div().into_any_element())
         }

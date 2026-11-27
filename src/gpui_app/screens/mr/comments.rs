@@ -15,6 +15,7 @@ impl MergeRequestsView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if !self.selected.as_ref().is_some_and(|m| self.mr_permissions(m, cx).can_comment) { return; }
         self.inline_target = Some(pos);
         self.inline_input.update(cx, |inp, cx| inp.set_value("", window, cx));
         cx.notify();
@@ -26,6 +27,7 @@ impl MergeRequestsView {
     }
 
     pub fn start_reply(&mut self, disc_id: String, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.selected.as_ref().is_some_and(|m| self.mr_permissions(m, cx).can_comment) { return; }
         self.replying_to = Some(disc_id);
         self.reply_input.update(cx, |inp, cx| inp.set_value("", window, cx));
         self.overview_list.remeasure();
@@ -39,6 +41,7 @@ impl MergeRequestsView {
         let (Some(mr), Some(client), Some(project)) =
             (self.selected.clone(), st.gitlab.clone(), st.project.clone())
         else { return; };
+        if !self.mr_permissions(&mr, cx).can_comment { return; }
         let (h_ep, p_ep, iid) = (st.host_epoch, st.project_epoch, mr.iid);
         self.comment_input.update(cx, |inp, cx| inp.set_value("", window, cx));
         self.mutation_task = Some(cx.spawn(async move |this, cx| {
@@ -66,7 +69,7 @@ impl MergeRequestsView {
         let (Some(target), Some(mr), Some(client), Some(project)) =
             (self.inline_target.clone(), self.selected.clone(), st.gitlab.clone(), st.project.clone())
         else { return; };
-        if body.is_empty() { return; }
+        if body.is_empty() || !self.mr_permissions(&mr, cx).can_comment { return; }
         let Some(refs) = mr.diff_refs.as_ref() else {
             window.push_notification("MR diff_refs not ready yet", cx);
             return;
@@ -103,7 +106,7 @@ impl MergeRequestsView {
         let (Some(disc_id), Some(mr), Some(client), Some(project)) =
             (self.replying_to.take(), self.selected.clone(), st.gitlab.clone(), st.project.clone())
         else { return; };
-        if body.is_empty() { return; }
+        if body.is_empty() || !self.mr_permissions(&mr, cx).can_comment { return; }
         let (h_ep, p_ep, iid) = (st.host_epoch, st.project_epoch, mr.iid);
         self.reply_input.update(cx, |inp, cx| inp.set_value("", window, cx));
         self.mutation_task = Some(cx.spawn(async move |this, cx| {
@@ -136,6 +139,7 @@ impl MergeRequestsView {
         let (Some(mr), Some(client), Some(project)) =
             (self.selected.clone(), st.gitlab.clone(), st.project.clone())
         else { return; };
+        if !self.mr_permissions(&mr, cx).can_resolve_discussions { return; }
         let (h_ep, p_ep, iid) = (st.host_epoch, st.project_epoch, mr.iid);
         self.mutation_task = Some(cx.spawn(async move |this, cx| {
             let res = spawn_tokio(async move {

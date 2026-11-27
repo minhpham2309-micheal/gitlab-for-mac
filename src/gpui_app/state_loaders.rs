@@ -100,19 +100,29 @@ impl AppState {
                         None => None,
                     }
                 };
-                let (todos, open_mrs, open_issues) = tokio::join!(todos_fut, mrs_fut, issues_fut);
-                (todos.ok().flatten(), open_mrs, open_issues)
+                let perms_fut = async {
+                    match project_id {
+                        Some(id) => client.project_permissions(id).await.ok(),
+                        None => None,
+                    }
+                };
+                let (todos, open_mrs, open_issues, perms) =
+                    tokio::join!(todos_fut, mrs_fut, issues_fut, perms_fut);
+                (todos.ok().flatten(), open_mrs, open_issues, perms)
             })
             .await;
             let _ = this.update(cx, |state, cx| {
                 if state.host_epoch != host_epoch {
                     return;
                 }
-                if let Ok((todos, open_mrs, open_issues)) = fetched {
+                if let Ok((todos, open_mrs, open_issues, perms)) = fetched {
                     state.counts.todos = todos;
                     if state.project_epoch == project_epoch {
                         state.counts.open_mrs = open_mrs;
                         state.counts.open_issues = open_issues;
+                        if let Some(p) = perms {
+                            state.set_project_permissions(p, cx);
+                        }
                     }
                     cx.notify();
                 }

@@ -35,10 +35,13 @@ pub fn render_palette_overlay<F: Fn(&mut Window, &mut App) + Clone + 'static>(
     let st = state.read(cx);
     let theme = cx.theme();
     let no_proj = st.project.is_none();
+    let can_ci = !no_proj && st.project_permissions.can_run_pipelines();
     let no_pipe_live = !st.summary.active_pipeline_live;
     let no_job = !st.summary.has_active_job;
     let no_job_manual = !st.summary.active_job_manual;
-    let no_mr = !st.summary.can_review_mr;
+    let can_approve_mr = st.summary.can_approve_mr;
+    let can_merge_mr = st.summary.can_merge_mr;
+    let can_close_mr = st.summary.can_close_mr;
     let no_url = st.summary.active_web_url.is_none();
     let no_back = !st.can_go_back();
     let no_fwd = !st.can_go_forward();
@@ -65,23 +68,32 @@ pub fn render_palette_overlay<F: Fn(&mut Window, &mut App) + Clone + 'static>(
         .item(nav_item("glab console", Icon::empty().path("icons/glab-terminal.svg"), &["cli"], false, GoConsole))
         .item(nav_item("Preferences", Icon::empty().path("icons/glab-settings.svg"), &["settings", "font", "theme", "ui"], false, GoPreferences));
 
-    let ci_group = CommandGroup::new()
-        .label("Pipeline & Job Actions")
-        .item(act_item("Run pipeline", no_proj, RunPipelineAction))
-        .item(act_item("Retry pipeline", no_proj, RetryPipelineAction))
-        .item(act_item("Cancel pipeline", no_pipe_live, CancelPipelineAction))
-        .item(act_item("Retry job", no_job, RetryJobAction))
-        .item(act_item("Cancel job", no_job, CancelJobAction))
-        .item(act_item("Play manual job", no_job_manual, PlayJobAction))
+    let mut ci_group = CommandGroup::new().label("Pipeline & Job Actions");
+    if can_ci {
+        ci_group = ci_group
+            .item(act_item("Run pipeline", no_proj, RunPipelineAction))
+            .item(act_item("Retry pipeline", no_proj, RetryPipelineAction))
+            .item(act_item("Cancel pipeline", no_pipe_live, CancelPipelineAction))
+            .item(act_item("Retry job", no_job, RetryJobAction))
+            .item(act_item("Cancel job", no_job, CancelJobAction))
+            .item(act_item("Play manual job", no_job_manual, PlayJobAction));
+    }
+    ci_group = ci_group
         .item(act_item("Toggle follow log", no_job, ToggleFollowLog))
         .item(act_item("Copy full log", no_job, CopyFullLog))
         .item(act_item("Download job artifacts", no_job, DownloadArtifactsAction));
 
-    let mr_group = CommandGroup::new()
-        .label("Merge Request Actions")
-        .item(act_item("Approve merge request", no_mr, ApproveMrAction))
-        .item(act_item("Merge merge request", no_mr, MergeMrAction))
-        .item(act_item("Close merge request", no_mr, CloseMrAction));
+    let has_mr_actions = can_approve_mr || can_merge_mr || can_close_mr;
+    let mut mr_group = CommandGroup::new().label("Merge Request Actions");
+    if can_approve_mr {
+        mr_group = mr_group.item(act_item("Approve merge request", false, ApproveMrAction));
+    }
+    if can_merge_mr {
+        mr_group = mr_group.item(act_item("Merge merge request", false, MergeMrAction));
+    }
+    if can_close_mr {
+        mr_group = mr_group.item(act_item("Close merge request", false, CloseMrAction));
+    }
 
     let tools_group = CommandGroup::new()
         .label("Tools")
@@ -96,6 +108,20 @@ pub fn render_palette_overlay<F: Fn(&mut Window, &mut App) + Clone + 'static>(
     let close_cancel = on_close.clone();
     let close_confirm = on_close.clone();
     let close_backdrop = on_close;
+
+    let mut command = Command::new(cmd_state)
+        .placeholder("Type a command or jump to screen…")
+        .highlight_matches(true)
+        .max_h(px(380.))
+        .group(nav_group)
+        .group(ci_group);
+    if has_mr_actions {
+        command = command.group(mr_group);
+    }
+    command = command
+        .group(tools_group)
+        .on_confirm(move |_, window, cx| close_confirm(window, cx))
+        .on_cancel(move |window, cx| close_cancel(window, cx));
 
     div()
         .id("command-palette-backdrop")
@@ -115,17 +141,6 @@ pub fn render_palette_overlay<F: Fn(&mut Window, &mut App) + Clone + 'static>(
                 .shadow_lg()
                 .bg(theme.popover)
                 .on_click(|_, _, cx| cx.stop_propagation())
-                .child(
-                    Command::new(cmd_state)
-                        .placeholder("Type a command or jump to screen…")
-                        .highlight_matches(true)
-                        .max_h(px(380.))
-                        .group(nav_group)
-                        .group(ci_group)
-                        .group(mr_group)
-                        .group(tools_group)
-                        .on_confirm(move |_, window, cx| close_confirm(window, cx))
-                        .on_cancel(move |window, cx| close_cancel(window, cx)),
-                ),
+                .child(command),
         )
 }

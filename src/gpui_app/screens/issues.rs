@@ -59,6 +59,7 @@ impl IssuesView {
                 this.pending_iid = Some(*iid);
                 this.load_list(cx);
             }
+            AppEvent::PermissionsChanged => cx.notify(),
             _ => {}
         });
         Self {
@@ -158,14 +159,27 @@ impl Render for IssuesView {
             .child(filter_bar)
             .child(list);
 
-        let md_ctx = MarkdownProjectContext::from_state(self.state.read(cx), cx);
-        let client = self.state.read(cx).gitlab.clone();
+        let (md_ctx, client, perms, me_id) = {
+            let st = self.state.read(cx);
+            (
+                MarkdownProjectContext::from_state(st, cx),
+                st.gitlab.clone(),
+                st.project_permissions,
+                st.current_user.as_ref().map(|u| u.id),
+            )
+        };
+        let is_author = me_id.is_some()
+            && self.selected.as_ref().and_then(|i| i.author.as_ref()).map(|a| a.id) == me_id;
+        let can_close = perms.can_manage_issue(is_author);
+        let can_comment = perms.can_comment();
         let right = render_issue_detail(
             self.selected.clone(),
             &self.notes,
             &self.comment_input,
             md_ctx,
             client.as_ref(),
+            can_close,
+            can_comment,
             cx,
         );
 

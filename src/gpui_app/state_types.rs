@@ -45,6 +45,7 @@ pub enum ScreenCommand {
 pub enum AppEvent {
     HostChanged { epoch: u64 },
     ProjectChanged { epoch: u64 },
+    PermissionsChanged,
     ScreenChanged { screen: Screen },
     PrefsChanged,
     Command(ScreenCommand),
@@ -61,6 +62,9 @@ pub struct SidebarCounts {
 #[derive(Debug, Clone, Default)]
 pub struct ScreenContextSummary {
     pub can_review_mr: bool,
+    pub can_approve_mr: bool,
+    pub can_merge_mr: bool,
+    pub can_close_mr: bool,
     pub active_mr_iid: Option<u64>,
     pub active_mr_label: Option<String>,
     pub active_pipeline_id: Option<u64>,

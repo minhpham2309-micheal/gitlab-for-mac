@@ -21,6 +21,8 @@ pub fn render_discussion_card(
     disc: &Discussion,
     head_sha: Option<&str>,
     is_replying: bool,
+    can_resolve: bool,
+    can_comment: bool,
     reply_input: &Entity<InputState>,
     md_ctx: &MarkdownProjectContext,
     client: Option<&GitLab>,
@@ -78,8 +80,9 @@ pub fn render_discussion_card(
         );
     }
 
+    let show_resolve = resolvable && can_resolve;
     let mut actions = div().flex().items_center().gap_1();
-    if resolvable {
+    if show_resolve {
         let next_res = !resolved;
         actions = actions.child(
             Button::new(SharedString::from(format!("res-{}", disc.id))).ghost().xsmall()
@@ -87,18 +90,23 @@ pub fn render_discussion_card(
                 .on_click(cx.listener(move |this, _, _, cx| this.resolve_discussion(disc_id.clone(), next_res, cx))),
         );
     }
-    actions = actions.child(
-        Button::new(SharedString::from(format!("rep-{}", disc.id))).ghost().xsmall().label("Reply")
-            .on_click(cx.listener(move |this, _, window, cx| this.start_reply(disc_id_reply.clone(), window, cx))),
-    );
+    if can_comment {
+        actions = actions.child(
+            Button::new(SharedString::from(format!("rep-{}", disc.id))).ghost().xsmall().label("Reply")
+                .on_click(cx.listener(move |this, _, window, cx| this.start_reply(disc_id_reply.clone(), window, cx))),
+        );
+    }
 
     let mut card = div()
         .p_3().rounded_md().border_1().border_color(theme.border).bg(theme.list_head)
         .flex().flex_col().gap_2()
-        .children(note_els)
-        .child(div().pt_1().border_t_1().border_color(theme.border.opacity(0.4)).flex().items_center().justify_between().gap_2().child(badges).child(actions));
+        .children(note_els);
 
-    if is_replying {
+    if outdated || resolved || show_resolve || can_comment {
+        card = card.child(div().pt_1().border_t_1().border_color(theme.border.opacity(0.4)).flex().items_center().justify_between().gap_2().child(badges).child(actions));
+    }
+
+    if is_replying && can_comment {
         card = card.child(
             div().flex().items_center().gap_2().pt_2()
                 .child(div().flex_1().child(Input::new(reply_input)))

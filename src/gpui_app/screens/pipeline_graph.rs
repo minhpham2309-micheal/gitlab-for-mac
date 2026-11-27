@@ -13,6 +13,7 @@ pub fn render_stage_graph(
     jobs: &[Job],
     bridges: &[BridgeJob],
     selected_job_id: Option<u64>,
+    can_run_ci: bool,
     cx: &mut Context<PipelinesView>,
 ) -> impl IntoElement + use<> {
     let theme = cx.theme();
@@ -73,7 +74,7 @@ pub fn render_stage_graph(
             );
 
         for card in col.cards {
-            col_el = col_el.child(render_job_card(card, selected_job_id, dark, cx));
+            col_el = col_el.child(render_job_card(card, selected_job_id, dark, can_run_ci, cx));
         }
 
         row = row.child(col_el);

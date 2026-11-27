@@ -133,4 +133,24 @@ impl GitLab {
     ) -> Result<MergeRequest> {
         self.send_body(Method::PUT, &format!("/projects/{project_id}/merge_requests/{iid}"), Some(body)).await
     }
+
+    pub async fn project_members(&self, project_id: u64) -> Result<Vec<User>> {
+        let primary = format!("/projects/{project_id}/members/all?per_page=100");
+        let raw = match self.send_paginated::<User>(&primary, 3).await {
+            Ok(users) => users,
+            Err(GitLabError::Http { status: 403 | 404, .. }) => {
+                let fallback = format!("/projects/{project_id}/users?per_page=100");
+                self.send_paginated::<User>(&fallback, 3).await?
+            }
+            Err(err) => return Err(err),
+        };
+        let mut deduped: Vec<User> = Vec::with_capacity(raw.len());
+        for user in raw {
+            if deduped.iter().all(|u| u.id != user.id) {
+                deduped.push(user);
+            }
+        }
+        deduped.sort_by_key(|a| a.name.to_lowercase());
+        Ok(deduped)
+    }
 }

@@ -35,7 +35,8 @@ pub fn render_mr_changes(
             annotations.push(DiffAnnotation::line(SharedString::from(key), pos));
         }
     }
-    if let Some(target) = view.inline_target.as_ref() {
+    let can_comment = view.mr_permissions(mr, cx).can_comment;
+    if can_comment && let Some(target) = view.inline_target.as_ref() {
         annotations.push(DiffAnnotation::line("inline-composer", target.clone()));
     }
 
@@ -55,15 +56,18 @@ pub fn render_mr_changes(
     let view_add = cx.entity().downgrade();
     let composer_input = view.inline_input.clone();
 
-    let diff_el = Diff::new(&view.diff_state)
+    let mut diff_el = Diff::new(&view.diff_state)
         .size_full()
         .line_number(true)
         .syntax_highlight(true)
-        .annotations(annotations)
-        .on_add_annotation(move |range, window, cx| {
+        .annotations(annotations);
+    if can_comment {
+        diff_el = diff_el.on_add_annotation(move |range, window, cx| {
             let pos = DiffLinePosition::new(range.path().clone(), range.end_side(), range.end());
             let _ = view_add.update(cx, |this, cx| this.open_inline_composer(pos, window, cx));
-        })
+        });
+    }
+    let diff_el = diff_el
         .render_annotation(move |ann, _, cx| {
             let theme = cx.theme();
             let id_str = format!("{}", ann.id());

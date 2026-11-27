@@ -10,27 +10,48 @@ use crate::gitlab::{GitLab, MergeRequest, User};
 use super::super::super::avatar::render_avatar;
 use super::super::super::pajamas_theme::status_color;
 use super::super::super::safe_url::safe_open_url;
+use super::member_picker::{render_member_picker, MemberPickerKind};
 use super::MergeRequestsView;
 
-fn section_header(
+fn web_section_header(
     title: String,
     edit_id: &'static str,
     edit_url: String,
+    can_edit: bool,
     theme: &gpui_kit::component::Theme,
 ) -> impl IntoElement {
     div()
         .flex().items_center().justify_between().gap_2()
         .child(div().text_xs().font_semibold().text_color(theme.foreground).child(title))
-        .child(
-            div()
-                .id(edit_id)
-                .cursor_pointer()
-                .text_xs()
-                .text_color(theme.muted_foreground)
+        .children(can_edit.then(|| {
+            div().id(edit_id).cursor_pointer().text_xs().text_color(theme.muted_foreground)
                 .hover(|s| s.text_color(theme.foreground))
                 .on_click(move |_, _, _| { let _ = safe_open_url(&edit_url); })
-                .child("Edit"),
-        )
+                .child("Edit").test_support()
+        }))
+}
+
+fn member_section_header(
+    title: String,
+    edit_id: &'static str,
+    kind: MemberPickerKind,
+    open: bool,
+    can_edit: bool,
+    cx: &mut Context<MergeRequestsView>,
+) -> impl IntoElement + use<> {
+    let theme = cx.theme();
+    div()
+        .flex().items_center().justify_between().gap_2()
+        .child(div().text_xs().font_semibold().text_color(theme.foreground).child(title))
+        .children(can_edit.then(|| {
+            div()
+                .id(edit_id).cursor_pointer().text_xs()
+                .text_color(if open { theme.link } else { theme.muted_foreground })
+                .hover(|s| s.text_color(theme.foreground))
+                .on_click(cx.listener(move |this, _, window, cx| this.toggle_member_picker(kind, window, cx)))
+                .child(if open { "Done" } else { "Edit" })
+                .test_support()
+        }))
 }
 
 pub fn render_mr_metadata_sidebar(
@@ -83,12 +104,28 @@ pub fn render_mr_metadata_sidebar(
         .map(|u| render_avatar(u.avatar_url.as_deref(), &u.username, px(24.), client, cx))
         .collect();
 
+    let can_edit = view.mr_permissions(mr, cx).can_edit_metadata;
+    let assignees_open = can_edit && view.member_picker == Some(MemberPickerKind::Assignees);
+    let reviewers_open = can_edit && view.member_picker == Some(MemberPickerKind::Reviewers);
+    let assignees_picker = assignees_open.then(|| render_member_picker(view, mr, MemberPickerKind::Assignees, client, cx));
+    let reviewers_picker = reviewers_open.then(|| render_member_picker(view, mr, MemberPickerKind::Reviewers, client, cx));
+    let assignees_hdr = member_section_header(
+        format!("{} {}", mr.assignees.len(), if mr.assignees.len() == 1 { "Assignee" } else { "Assignees" }),
+        "mr-sb-edit-assignees", MemberPickerKind::Assignees, assignees_open, can_edit, cx,
+    );
+    let reviewers_hdr = member_section_header(
+        format!("{} {}", mr.reviewers.len(), if mr.reviewers.len() == 1 { "Reviewer" } else { "Reviewers" }),
+        "mr-sb-edit-reviewers", MemberPickerKind::Reviewers, reviewers_open, can_edit, cx,
+    );
+
     let theme = cx.theme();
     let border = theme.border.opacity(0.6);
     let muted = theme.muted_foreground;
     let link = theme.link;
 
-    let assignees_body = if assignee_rows.is_empty() {
+    let assignees_body = if !assignee_rows.is_empty() {
+        div().flex().flex_col().gap_1p5().children(assignee_rows).into_any_element()
+    } else if can_edit {
         div().flex().items_center().gap_1().text_xs().text_color(muted)
             .child("None -")
             .child(
@@ -99,10 +136,12 @@ pub fn render_mr_metadata_sidebar(
             )
             .into_any_element()
     } else {
-        div().flex().flex_col().gap_1p5().children(assignee_rows).into_any_element()
+        div().text_xs().text_color(muted).child("None").into_any_element()
     };
 
-    let reviewers_body = if reviewer_rows.is_empty() {
+    let reviewers_body = if !reviewer_rows.is_empty() {
+        div().flex().flex_col().gap_1p5().children(reviewer_rows).into_any_element()
+    } else if can_edit {
         div().flex().items_center().gap_1().text_xs().text_color(muted)
             .child("None -")
             .child(
@@ -113,7 +152,7 @@ pub fn render_mr_metadata_sidebar(
             )
             .into_any_element()
     } else {
-        div().flex().flex_col().gap_1p5().children(reviewer_rows).into_any_element()
+        div().text_xs().text_color(muted).child("None").into_any_element()
     };
 
     let labels_body = if mr.labels.is_empty() {
@@ -135,28 +174,20 @@ pub fn render_mr_metadata_sidebar(
         .w(px(268.)).flex_shrink_0().flex().flex_col()
         .child(
             div().py_3().border_b_1().border_color(border).flex().flex_col().gap_1p5()
-                .child(section_header(
-                    format!("{} {}", mr.assignees.len(), if mr.assignees.len() == 1 { "Assignee" } else { "Assignees" }),
-                    "mr-sb-edit-assignees", edit_url.clone(), theme,
-                ))
-                .child(assignees_body),
+                .child(assignees_hdr).child(assignees_body).children(assignees_picker),
         )
         .child(
             div().py_3().border_b_1().border_color(border).flex().flex_col().gap_1p5()
-                .child(section_header(
-                    format!("{} {}", mr.reviewers.len(), if mr.reviewers.len() == 1 { "Reviewer" } else { "Reviewers" }),
-                    "mr-sb-edit-reviewers", edit_url.clone(), theme,
-                ))
-                .child(reviewers_body),
+                .child(reviewers_hdr).child(reviewers_body).children(reviewers_picker),
         )
         .child(
             div().py_3().border_b_1().border_color(border).flex().flex_col().gap_1p5()
-                .child(section_header("Labels".into(), "mr-sb-edit-labels", edit_url.clone(), theme))
+                .child(web_section_header("Labels".into(), "mr-sb-edit-labels", edit_url.clone(), can_edit, theme))
                 .child(labels_body),
         )
         .child(
             div().py_3().border_b_1().border_color(border).flex().flex_col().gap_1p5()
-                .child(section_header("Milestone".into(), "mr-sb-edit-milestone", edit_url, theme))
+                .child(web_section_header("Milestone".into(), "mr-sb-edit-milestone", edit_url, can_edit, theme))
                 .child(div().text_xs().text_color(milestone_color).child(milestone_text)),
         )
         .child(
@@ -164,13 +195,14 @@ pub fn render_mr_metadata_sidebar(
                 .child(
                     div().flex().items_center().justify_between().gap_2()
                         .child(div().text_xs().font_semibold().text_color(theme.foreground).child("Time tracking"))
-                        .child(
+                        .children(can_edit.then(|| {
                             div().id("mr-sb-time-add").cursor_pointer().flex().items_center().gap_1()
                                 .text_color(muted).hover(|s| s.text_color(theme.foreground))
                                 .on_click(move |_, _, _| { let _ = safe_open_url(&time_url); })
                                 .child(Icon::new(IconName::Calendar).size_3p5())
-                                .child(Icon::new(IconName::Plus).size_3()),
-                        ),
+                                .child(Icon::new(IconName::Plus).size_3())
+                                .test_support()
+                        })),
                 )
                 .child(div().text_xs().text_color(muted).child(time_text)),
         )

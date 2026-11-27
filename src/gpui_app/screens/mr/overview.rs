@@ -5,8 +5,8 @@ use gpui_kit::{
         menu::{DropdownMenu as _, PopupMenuItem},
         ActiveTheme as _, Icon, IconName, Sizable as _,
     },
-    div, list, px, rgb, Context, InteractiveElement as _, IntoElement, ParentElement as _,
-    StatefulInteractiveElement as _, Styled as _, TestSupportExt as _,
+    div, list, prelude::FluentBuilder as _, px, rgb, Context, InteractiveElement as _, IntoElement,
+    ParentElement as _, StatefulInteractiveElement as _, Styled as _, TestSupportExt as _,
 };
 
 use crate::gitlab::{GitLab, MergeRequest, Project};
@@ -54,15 +54,16 @@ fn render_desc_and_reactions(
         }
     }
 
+    let can_comment = view.mr_permissions(mr, cx).can_comment;
     let weak_emoji = cx.entity().downgrade();
     let theme = cx.theme();
     let thumb_color = rgb(if theme.is_dark() { 0xE9BE74 } else { 0xAB6100 });
     let reaction_btn = |id: &'static str, icon: IconName, count: usize, active: bool| {
         div()
-            .id(id).px_2p5().py_1().rounded_md().cursor_pointer()
+            .id(id).px_2p5().py_1().rounded_md()
+            .when(can_comment, |d| d.cursor_pointer().hover(|s| s.bg(theme.secondary_hover)))
             .bg(if active { theme.list_active } else { theme.secondary })
             .border_1().border_color(if active { theme.primary } else { theme.border })
-            .hover(|s| s.bg(theme.secondary_hover))
             .flex().items_center().gap_1p5().text_xs().text_color(theme.foreground)
             .child(Icon::new(icon).size_3p5().text_color(thumb_color))
             .child(count.to_string())
@@ -72,12 +73,12 @@ fn render_desc_and_reactions(
         .id("mr-reactions-bar").flex().items_center().flex_wrap().gap_2()
         .child(
             reaction_btn("mr-react-up", IconName::ThumbsUp, up_n, up_mine)
-                .on_click(cx.listener(|this, _, _, cx| this.toggle_award_emoji("thumbsup", cx)))
+                .when(can_comment, |d| d.on_click(cx.listener(|this, _, _, cx| this.toggle_award_emoji("thumbsup", cx))))
                 .test_support(),
         )
         .child(
             reaction_btn("mr-react-down", IconName::ThumbsDown, down_n, down_mine)
-                .on_click(cx.listener(|this, _, _, cx| this.toggle_award_emoji("thumbsdown", cx)))
+                .when(can_comment, |d| d.on_click(cx.listener(|this, _, _, cx| this.toggle_award_emoji("thumbsdown", cx))))
                 .test_support(),
         )
         .children(extra_emojis.into_iter().map(|(name, cnt)| {
@@ -85,7 +86,7 @@ fn render_desc_and_reactions(
             div().px_2p5().py_1().rounded_md().bg(theme.secondary).border_1().border_color(theme.border)
                 .text_xs().text_color(theme.foreground).child(format!("{glyph} {cnt}"))
         }))
-        .child(
+        .children(can_comment.then(|| {
             Button::new("mr-react-add").outline().xsmall().icon(Icon::new(IconName::Plus).size_3())
                 .dropdown_menu(move |menu, _, _| {
                     let (w1, w2, w3, w4) = (weak_emoji.clone(), weak_emoji.clone(), weak_emoji.clone(), weak_emoji.clone());
@@ -93,8 +94,8 @@ fn render_desc_and_reactions(
                         .item(PopupMenuItem::new("🎉 Tada").on_click(move |_, _, cx| { let _ = w2.update(cx, |v, cx| v.toggle_award_emoji("tada", cx)); }))
                         .item(PopupMenuItem::new("❤️ Heart").on_click(move |_, _, cx| { let _ = w3.update(cx, |v, cx| v.toggle_award_emoji("heart", cx)); }))
                         .item(PopupMenuItem::new("👀 Eyes").on_click(move |_, _, cx| { let _ = w4.update(cx, |v, cx| v.toggle_award_emoji("eyes", cx)); }))
-                }),
-        );
+                })
+        }));
 
     div().w_full().pb_4().flex().flex_col().gap_4()
         .child(div().id("mr-desc-body").w_full().child(desc_block).test_support())
@@ -103,10 +104,15 @@ fn render_desc_and_reactions(
 
 fn render_comment_composer(
     view: &MergeRequestsView,
+    mr: &MergeRequest,
     cx: &mut Context<MergeRequestsView>,
 ) -> impl IntoElement + use<> {
+    if !view.mr_permissions(mr, cx).can_comment {
+        return div().w_full().pb_4().into_any_element();
+    }
     let theme = cx.theme();
     div()
+        .id("mr-comment-composer")
         .w_full().pt_2().pb_6()
         .child(
             div().w_full().p_3().rounded_md().border_1().border_color(theme.border).bg(theme.list_head)
@@ -119,6 +125,8 @@ fn render_comment_composer(
                     ),
                 ),
         )
+        .test_support()
+        .into_any_element()
 }
 
 pub fn render_mr_overview(
@@ -147,7 +155,7 @@ pub fn render_mr_overview(
                     let entry = this.cached_activity[i - 3].clone();
                     render_activity_entry(this, &entry, &mr_owned, &web_origin, &md_ctx, client_owned.as_ref(), cx)
                 }
-                _ => render_comment_composer(this, cx).into_any_element(),
+                _ => render_comment_composer(this, &mr_owned, cx).into_any_element(),
             }
         }),
     )

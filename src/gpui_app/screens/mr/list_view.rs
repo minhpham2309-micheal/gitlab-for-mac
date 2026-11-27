@@ -54,23 +54,24 @@ pub fn render_mr_list_view(
             .test_support()
     }));
 
+    let perms = view.state.read(cx).project_permissions;
     let view_weak = cx.entity().downgrade();
     let actions = div()
         .flex().items_center().gap_2().pb_1p5()
-        .child(
+        .children(perms.can_bulk_edit_mrs().then(|| {
             div().id("mr-bulk-edit").px_3().py_1().rounded_md().cursor_pointer()
                 .bg(theme.secondary).border_1().border_color(theme.border).hover(|s| s.bg(theme.secondary_hover))
                 .text_xs().text_color(theme.foreground)
                 .on_click(move |_, _, _| { let _ = safe_open_url(&bulk_url); })
-                .child("Bulk edit").test_support(),
-        )
-        .child(
+                .child("Bulk edit").test_support()
+        }))
+        .children(perms.can_create_mr().then(|| {
             div().id("mr-new-btn").px_3().py_1().rounded_md().cursor_pointer()
                 .bg(primary_cta_bg).hover(|s| s.opacity(0.9))
                 .text_xs().font_semibold().text_color(primary_cta_fg)
                 .on_click(move |_, _, _| { let _ = safe_open_url(&new_mr_url); })
-                .child("New merge request").test_support(),
-        )
+                .child("New merge request").test_support()
+        }))
         .child(
             Button::new("mr-list-more").ghost().xsmall().icon(Icon::new(IconName::EllipsisVertical).size_3p5())
                 .dropdown_menu(move |menu, _, _| {

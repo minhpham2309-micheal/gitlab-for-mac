@@ -1,13 +1,25 @@
 use gpui_kit::{Context, Window};
 use serde_json::json;
 
-use crate::gitlab::{mr_can_review, GitLabError};
+use crate::gitlab::{mr_can_review, GitLabError, MergeRequest};
 use crate::runtime::spawn_tokio;
 
 use super::super::super::confirm::{open_destructive_confirm, DestructiveConfirm};
 use super::MergeRequestsView;
 
 impl MergeRequestsView {
+    fn mutation_allowed(&self, kind: &str, mr: &MergeRequest, cx: &gpui_kit::App) -> bool {
+        let p = self.mr_permissions(mr, cx);
+        match kind {
+            "merge" => p.can_merge,
+            "approve" => p.can_approve,
+            "unapprove" => p.can_unapprove,
+            "rebase" => p.can_rebase,
+            "reopen" => p.can_reopen,
+            _ => p.can_close,
+        }
+    }
+
     pub fn perform_mr_mutation(
         &mut self,
         kind: &'static str,
@@ -16,6 +28,7 @@ impl MergeRequestsView {
     ) {
         let st = self.state.read(cx);
         let (Some(mr), Some(project)) = (self.selected.clone(), st.project.clone()) else { return; };
+        if !self.mutation_allowed(kind, &mr, cx) { return; }
         if kind != "reopen" && !mr_can_review(&mr.state) {
             self.state.update(cx, |s, cx| s.set_status("Only open merge requests can be mutated", cx));
             return;
@@ -50,6 +63,7 @@ impl MergeRequestsView {
     pub(crate) fn exec_mr_mutation(&mut self, kind: &'static str, cx: &mut Context<Self>) {
         let st = self.state.read(cx);
         let (Some(mr), Some(client), Some(project)) = (self.selected.clone(), st.gitlab.clone(), st.project.clone()) else { return; };
+        if !self.mutation_allowed(kind, &mr, cx) { return; }
         if kind != "reopen" && !mr_can_review(&mr.state) {
             self.state.update(cx, |s, cx| s.set_status("Only open merge requests can be mutated", cx));
             return;
@@ -88,6 +102,7 @@ impl MergeRequestsView {
     pub fn add_mr_todo(&mut self, cx: &mut Context<Self>) {
         let st = self.state.read(cx);
         let (Some(mr), Some(client), Some(project)) = (self.selected.clone(), st.gitlab.clone(), st.project.clone()) else { return; };
+        if !self.mr_permissions(&mr, cx).can_todo { return; }
         let (h_ep, p_ep, iid) = (st.host_epoch, st.project_epoch, mr.iid);
         self.mutation_task = Some(cx.spawn(async move |this, cx| {
             let res = spawn_tokio(async move { client.create_mr_todo(project.id, iid).await.map_err(|e| e.to_string()) }).await;
@@ -109,6 +124,7 @@ impl MergeRequestsView {
     pub fn toggle_award_emoji(&mut self, name: &'static str, cx: &mut Context<Self>) {
         let st = self.state.read(cx);
         let (Some(mr), Some(client), Some(project)) = (self.selected.clone(), st.gitlab.clone(), st.project.clone()) else { return; };
+        if !self.mr_permissions(&mr, cx).can_comment { return; }
         let me = st.current_user.as_ref().map(|u| u.id);
         let existing_id = me.and_then(|uid| {
             self.award_emojis.iter().find(|a| a.name == name && a.user.as_ref().is_some_and(|u| u.id == uid)).map(|a| a.id)
@@ -144,6 +160,7 @@ impl MergeRequestsView {
             self.state.update(cx, |s, cx| s.set_status("Current user unknown; sign in first", cx));
             return;
         };
+        if !self.mr_permissions(&mr, cx).can_edit_metadata { return; }
         let (h_ep, p_ep, iid) = (st.host_epoch, st.project_epoch, mr.iid);
         let body = if as_reviewer {
             let mut ids: Vec<u64> = mr.reviewers.iter().map(|u| u.id).collect();
@@ -170,6 +187,7 @@ impl MergeRequestsView {
     pub fn save_mr_edit(&mut self, title: String, description: String, cx: &mut Context<Self>) {
         let st = self.state.read(cx);
         let (Some(mr), Some(client), Some(project)) = (self.selected.clone(), st.gitlab.clone(), st.project.clone()) else { return; };
+        if !self.mr_permissions(&mr, cx).can_edit { return; }
         let (h_ep, p_ep, iid) = (st.host_epoch, st.project_epoch, mr.iid);
         let body = json!({ "title": title, "description": description });
         self.mutation_task = Some(cx.spawn(async move |this, cx| {

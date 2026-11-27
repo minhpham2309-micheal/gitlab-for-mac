@@ -31,6 +31,18 @@ fn on_cmd<A: Action>(
     }))
 }
 
+fn on_ci_cmd<A: Action>(
+    el: Stateful<gpui_kit::Div>,
+    cmd: ScreenCommand,
+    cx: &mut Context<AppShell>,
+) -> Stateful<gpui_kit::Div> {
+    el.on_action(cx.listener(move |this, _: &A, _, cx| {
+        if this.state().read(cx).project_permissions.can_run_pipelines() {
+            this.state().update(cx, |s, cx| s.dispatch_command(cmd.clone(), cx));
+        }
+    }))
+}
+
 #[allow(clippy::too_many_arguments)]
 fn confirm_cmd(
     shell: &AppShell,
@@ -65,9 +77,14 @@ fn confirm_cmd(
             state.update(cx, |s, cx| {
                 if s.host_epoch != h_ep || s.project_epoch != p_ep { return; }
                 let ok = match cmd {
-                    ScreenCommand::MergeMr | ScreenCommand::CloseMr => s.summary.active_mr_iid == mr_iid,
-                    ScreenCommand::CancelPipeline => s.summary.active_pipeline_id == pipe_id,
-                    ScreenCommand::PlayJob => s.summary.active_job_id == job_id,
+                    ScreenCommand::MergeMr => s.summary.active_mr_iid == mr_iid && s.summary.can_merge_mr,
+                    ScreenCommand::CloseMr => s.summary.active_mr_iid == mr_iid && s.summary.can_close_mr,
+                    ScreenCommand::CancelPipeline => {
+                        s.summary.active_pipeline_id == pipe_id && s.project_permissions.can_run_pipelines()
+                    }
+                    ScreenCommand::PlayJob => {
+                        s.summary.active_job_id == job_id && s.project_permissions.can_run_pipelines()
+                    }
                     _ => true,
                 };
                 if ok { s.dispatch_command(cmd.clone(), cx); }
@@ -158,34 +175,38 @@ pub fn attach_shell_actions(
     root = on_cmd::<LogFindNext>(root, ScreenCommand::LogFindNext, cx);
     root = on_cmd::<LogFindPrev>(root, ScreenCommand::LogFindPrev, cx);
     root = on_cmd::<CopyFullLog>(root, ScreenCommand::CopyFullLog, cx);
-    root = on_cmd::<RunPipelineAction>(root, ScreenCommand::RunPipeline, cx);
-    root = on_cmd::<RetryPipelineAction>(root, ScreenCommand::RetryPipeline, cx);
-    root = on_cmd::<RetryJobAction>(root, ScreenCommand::RetryJob, cx);
-    root = on_cmd::<CancelJobAction>(root, ScreenCommand::CancelJob, cx);
+    root = on_ci_cmd::<RunPipelineAction>(root, ScreenCommand::RunPipeline, cx);
+    root = on_ci_cmd::<RetryPipelineAction>(root, ScreenCommand::RetryPipeline, cx);
+    root = on_ci_cmd::<RetryJobAction>(root, ScreenCommand::RetryJob, cx);
+    root = on_ci_cmd::<CancelJobAction>(root, ScreenCommand::CancelJob, cx);
     root = on_cmd::<DownloadArtifactsAction>(root, ScreenCommand::DownloadArtifacts, cx);
-    root = on_cmd::<ApproveMrAction>(root, ScreenCommand::ApproveMr, cx);
 
-    root.on_action(cx.listener(|this, _: &CancelPipelineAction, w, cx| {
-        let sum = &this.state().read(cx).summary;
-        if !sum.active_pipeline_live { return; }
-        let target = sum.active_pipeline_label.clone().unwrap_or_else(|| "selected pipeline".into());
+    root.on_action(cx.listener(|this, _: &ApproveMrAction, _, cx| {
+        if this.state().read(cx).summary.can_approve_mr {
+            this.state().update(cx, |s, cx| s.dispatch_command(ScreenCommand::ApproveMr, cx));
+        }
+    }))
+    .on_action(cx.listener(|this, _: &CancelPipelineAction, w, cx| {
+        let st = this.state().read(cx);
+        if !st.project_permissions.can_run_pipelines() || !st.summary.active_pipeline_live { return; }
+        let target = st.summary.active_pipeline_label.clone().unwrap_or_else(|| "selected pipeline".into());
         confirm_cmd(this, "Cancel pipeline", "Cancel pipeline", target, "Cancel the running pipeline and stop pending jobs.", ScreenCommand::CancelPipeline, w, cx);
     }))
     .on_action(cx.listener(|this, _: &PlayJobAction, w, cx| {
-        let sum = &this.state().read(cx).summary;
-        if !sum.active_job_manual { return; }
-        let target = sum.active_job_label.clone().unwrap_or_else(|| "selected manual job".into());
+        let st = this.state().read(cx);
+        if !st.project_permissions.can_run_pipelines() || !st.summary.active_job_manual { return; }
+        let target = st.summary.active_job_label.clone().unwrap_or_else(|| "selected manual job".into());
         confirm_cmd(this, "Play manual job", "Play job", target, "Trigger execution of this manual CI job.", ScreenCommand::PlayJob, w, cx);
     }))
     .on_action(cx.listener(|this, _: &MergeMrAction, w, cx| {
         let sum = &this.state().read(cx).summary;
-        if !sum.can_review_mr { return; }
+        if !sum.can_merge_mr { return; }
         let target = sum.active_mr_label.clone().unwrap_or_else(|| "selected MR".into());
         confirm_cmd(this, "Merge merge request", "Merge", target, "Merge the active merge request into its target branch.", ScreenCommand::MergeMr, w, cx);
     }))
     .on_action(cx.listener(|this, _: &CloseMrAction, w, cx| {
         let sum = &this.state().read(cx).summary;
-        if !sum.can_review_mr { return; }
+        if !sum.can_close_mr { return; }
         let target = sum.active_mr_label.clone().unwrap_or_else(|| "selected MR".into());
         confirm_cmd(this, "Close merge request", "Close MR", target, "Close this merge request without merging.", ScreenCommand::CloseMr, w, cx);
     }))

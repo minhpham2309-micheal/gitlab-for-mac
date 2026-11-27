@@ -23,6 +23,7 @@ pub fn render_merge_widget(
     let dark = theme.is_dark();
     let readiness = mr_merge_readiness(mr);
     let can_review = mr_can_review(&mr.state);
+    let perms = view.mr_permissions(mr, cx);
     let behind = mr.diverged_commits_count.unwrap_or(0);
     let commits_n = view.commits.len();
     let check_fg: gpui_kit::Hsla = if dark { rgb(0x18171D).into() } else { rgb(0xFFFFFF).into() };
@@ -59,7 +60,7 @@ pub fn render_merge_widget(
                 )
                 .child(
                     div().flex().items_center().gap_2().flex_shrink_0()
-                        .children((can_review && readiness.can_merge_now).then(|| {
+                        .children((perms.can_merge && readiness.can_merge_now).then(|| {
                             Button::new("mr-widget-merge-btn").primary().xsmall().label("Merge")
                                 .on_click(cx.listener(|this, _, w, cx| this.perform_mr_mutation("merge", Some(w), cx)))
                         }))
@@ -97,21 +98,23 @@ pub fn render_merge_widget(
             details = details.child(
                 div().flex().items_center().flex_wrap().gap_1()
                     .child(format!("• The source branch is {behind} {b_noun} behind the target branch."))
-                    .child(
+                    .children(perms.can_rebase.then(|| {
                         div().id("mr-rebase-link").cursor_pointer().text_color(theme.link)
                             .hover(|s| s.text_color(theme.link_hover))
                             .on_click(cx.listener(|this, _, w, cx| this.perform_mr_mutation("rebase", Some(w), cx)))
-                            .child(if mr.rebase_in_progress == Some(true) { "Rebasing…" } else { "Rebase source branch" }),
-                    ),
+                            .child(if mr.rebase_in_progress == Some(true) { "Rebasing…" } else { "Rebase source branch" })
+                            .test_support()
+                    })),
             );
         }
-        details = details.child(commit_line).child(branch_line).child(
-            div().pt_1().flex().items_center().flex_wrap().gap_4()
+        details = details.child(commit_line).child(branch_line).children(perms.can_merge.then(|| {
+            div().id("mr-merge-options").pt_1().flex().items_center().flex_wrap().gap_4()
                 .child(Checkbox::new(SharedString::from("mr-opt-del-branch")).label("Delete source branch").checked(view.remove_source_branch)
                     .on_click(cx.listener(|this, checked: &bool, _, cx| { this.remove_source_branch = *checked; cx.notify(); })))
                 .child(Checkbox::new(SharedString::from("mr-opt-squash")).label("Squash commits").checked(view.squash_commits)
-                    .on_click(cx.listener(|this, checked: &bool, _, cx| { this.squash_commits = *checked; cx.notify(); }))),
-        );
+                    .on_click(cx.listener(|this, checked: &bool, _, cx| { this.squash_commits = *checked; cx.notify(); })))
+                .test_support()
+        }));
         card = card.child(details);
     }
     card.test_support()

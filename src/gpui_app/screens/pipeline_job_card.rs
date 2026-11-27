@@ -30,6 +30,7 @@ pub fn render_job_card(
     card: StageJobCard,
     selected_job_id: Option<u64>,
     dark: bool,
+    can_run_ci: bool,
     cx: &mut Context<PipelinesView>,
 ) -> impl IntoElement {
     let theme = cx.theme();
@@ -53,7 +54,7 @@ pub fn render_job_card(
     };
 
     let mut actions = div().flex().items_center().gap_1().flex_shrink_0();
-    if !card.is_bridge {
+    if can_run_ci && !card.is_bridge {
         if job.status == "manual" {
             let j_play = job.clone();
             actions = actions.child(

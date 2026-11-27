@@ -9,6 +9,7 @@ use super::pipelines::PipelinesView;
 impl PipelinesView {
     pub(crate) fn trigger_run_pipeline(&mut self, git_ref: String, cx: &mut Context<Self>) {
         let st = self.state.read(cx);
+        if !st.project_permissions.can_run_pipelines() { return; }
         let (Some(client), Some(project)) = (st.gitlab.clone(), st.project.clone()) else { return; };
         let (h_ep, p_ep) = (st.host_epoch, st.project_epoch);
         self.action_task = Some(cx.spawn(async move |this, cx| {
@@ -32,6 +33,7 @@ impl PipelinesView {
 
     pub(crate) fn confirm_cancel_pipeline(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let st = self.state.read(cx);
+        if !st.project_permissions.can_run_pipelines() { return; }
         let Some(pipe) = self.selected_pipeline.clone() else { return; };
         if !pipeline_is_live(&pipe.status) { return; }
         let (h_ep, p_ep, pid) = (st.host_epoch, st.project_epoch, pipe.id);
@@ -66,6 +68,7 @@ impl PipelinesView {
     pub fn confirm_play_job(&mut self, job: Job, window: &mut Window, cx: &mut Context<Self>) {
         if job.status != "manual" { return; }
         let st = self.state.read(cx);
+        if !st.project_permissions.can_run_pipelines() { return; }
         let (h_ep, p_ep, job_id) = (st.host_epoch, st.project_epoch, job.id);
         let pid = self.selected_pipeline.as_ref().map(|p| p.id);
         let host = st.active_host.as_ref().map(|h| h.hostname.clone()).unwrap_or_default();
@@ -98,6 +101,7 @@ impl PipelinesView {
 
     pub fn run_job_action(&mut self, job_id: u64, kind: &'static str, cx: &mut Context<Self>) {
         let st = self.state.read(cx);
+        if !st.project_permissions.can_run_pipelines() { return; }
         let (Some(client), Some(project)) = (st.gitlab.clone(), st.project.clone()) else { return; };
         let (h_ep, p_ep) = (st.host_epoch, st.project_epoch);
         let sel_pid = self.selected_pipeline.as_ref().map(|p| p.id);
@@ -140,6 +144,7 @@ impl PipelinesView {
 
     pub fn run_pipeline_action(&mut self, kind: &'static str, cx: &mut Context<Self>) {
         let st = self.state.read(cx);
+        if !st.project_permissions.can_run_pipelines() { return; }
         let (Some(client), Some(project), Some(pipe)) =
             (st.gitlab.clone(), st.project.clone(), self.selected_pipeline.clone())
         else { return; };
