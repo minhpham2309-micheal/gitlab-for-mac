@@ -39,6 +39,7 @@ mod types_repo;
 mod types_review;
 
 pub use ansi::{colorize, strip, Rgb};
+pub use api_ci::MrPipelineTarget;
 pub use client::GitLab;
 pub use client_raw::MAX_VIEWER_BLOB_BYTES;
 pub use diff::{parse_unified_full, DiffKind, DiffLine, MrChange, MrDiff, RawDiff};

@@ -11,6 +11,7 @@ mod detail_header;
 mod detail_loader;
 mod discussion_card;
 mod edit_dialog;
+mod list_ci;
 mod list_row;
 mod list_view;
 mod member_picker;
@@ -101,6 +102,7 @@ pub struct MergeRequestsView {
     pub(crate) inline_input: Entity<InputState>,
     pub(crate) list_task: Option<Task<()>>,
     pub(crate) counts_task: Option<Task<()>>,
+    pub(crate) pipelines_hydrate_task: Option<Task<()>>,
     pub(crate) detail_task: Option<Task<()>>,
     pub(crate) members_task: Option<Task<()>>,
     pub(crate) mutation_task: Option<Task<()>>,
@@ -133,8 +135,15 @@ impl MergeRequestsView {
                 cx.notify();
             }
             AppEvent::ScreenChanged { screen } if *screen == Screen::MergeRequests => {
-                if this.mrs.is_empty() && !this.list_loading { this.load_list(cx); }
+                if this.mrs.is_empty() && !this.list_loading {
+                    this.load_list(cx);
+                } else if this.selected.is_none() {
+                    this.hydrate_list_pipelines(cx);
+                }
                 this.sync_summary(cx);
+            }
+            AppEvent::ScreenChanged { .. } => {
+                this.pipelines_hydrate_task = None;
             }
             AppEvent::Command(ScreenCommand::Refresh) if this.state.read(cx).screen == Screen::MergeRequests => {
                 if let Some(mr) = this.selected.clone() { this.select_mr(mr, false, cx); } else { this.load_list(cx); }
@@ -166,7 +175,7 @@ impl MergeRequestsView {
             raw_diffs: Vec::new(), fallback_notices: Vec::new(), has_truncated: false,
             diff_state, discussions: Vec::new(), discussions_error: None,
             inline_target: None, replying_to: None, comment_input, reply_input, inline_input,
-            list_task: None, counts_task: None, detail_task: None, members_task: None,
+            list_task: None, counts_task: None, pipelines_hydrate_task: None, detail_task: None, members_task: None,
             mutation_task: None, _subs: vec![sub_search, sub_member, sub],
         }
     }

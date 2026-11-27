@@ -48,6 +48,7 @@ impl MergeRequestsView {
         let iid = mr.iid;
         let remove_default = mr.force_remove_source_branch.or(mr.should_remove_source_branch).unwrap_or(false);
         let squash_default = mr.squash.unwrap_or(false);
+        self.pipelines_hydrate_task = None;
         self.clear_detail(cx);
         self.selected = Some(mr);
         self.remove_source_branch = remove_default;
@@ -102,6 +103,12 @@ impl MergeRequestsView {
                     if let Ok(full_mr) = detail_res {
                         view.remove_source_branch = full_mr.force_remove_source_branch.or(full_mr.should_remove_source_branch).unwrap_or(false);
                         view.squash_commits = full_mr.squash.unwrap_or(false);
+                        let latest_pipe = full_mr.head_pipeline.clone().or_else(|| pipes.first().cloned());
+                        if let Some(hp) = latest_pipe
+                            && let Some(row) = view.mrs.iter_mut().find(|m| m.iid == iid)
+                        {
+                            row.head_pipeline = Some(hp);
+                        }
                         view.selected = Some(full_mr);
                     }
                     match diffs_res {
