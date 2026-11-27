@@ -6,6 +6,7 @@ use gpui_kit::{
 use crate::runtime::spawn_tokio;
 
 use super::annotations::resolve_diff_position;
+use super::detail_loader::apply_mergeability_snapshot;
 use super::MergeRequestsView;
 
 impl MergeRequestsView {
@@ -190,7 +191,12 @@ impl MergeRequestsView {
         let (h_ep, p_ep, iid) = (st.host_epoch, st.project_epoch, mr.iid);
         self.mutation_task = Some(cx.spawn(async move |this, cx| {
             let res = spawn_tokio(async move {
-                client.resolve_mr_discussion(project.id, iid, &disc_id, resolved).await.map_err(|e| e.to_string())
+                let updated = client.resolve_mr_discussion(project.id, iid, &disc_id, resolved).await.map_err(|e| e.to_string())?;
+                let (detail, snap) = tokio::join!(
+                    client.merge_request_detail(project.id, iid),
+                    client.mr_mergeability_checks(&project.path_with_namespace, iid),
+                );
+                Ok::<_, String>((updated, detail.ok(), snap))
             })
             .await;
             let _ = this.update(cx, |view, cx| {
@@ -199,9 +205,13 @@ impl MergeRequestsView {
                     return;
                 }
                 match res {
-                    Ok(Ok(updated)) => {
+                    Ok(Ok((updated, fresh_mr, snap))) => {
                         if let Some(d) = view.discussions.iter_mut().find(|d| d.id == updated.id) {
                             *d = updated;
+                        }
+                        if let Some(mut fresh) = fresh_mr {
+                            view.mergeability_checks = apply_mergeability_snapshot(&mut fresh, snap);
+                            view.selected = Some(fresh);
                         }
                         view.overview_list.remeasure();
                     }

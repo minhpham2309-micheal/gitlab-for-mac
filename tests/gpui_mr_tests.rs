@@ -7,8 +7,8 @@ use gpui_kit::{
 
 use gitlab_for_mac::config::HostAuth;
 use gitlab_for_mac::gitlab::{
-    Discussion, DiscussionNote, Job, MergeRequest, MrApprovals, MrFilter, MrListCounts,
-    MrUserPermissions, Pipeline, PipelineTestSummary, PipelineTestTotals, Project,
+    Discussion, DiscussionNote, Job, MergeRequest, MergeabilityCheck, MrApprovals, MrFilter,
+    MrListCounts, MrUserPermissions, Pipeline, PipelineTestSummary, PipelineTestTotals, Project,
     ProjectPermissions, RawDiff, RepoCommit, TestSuiteSummary, User, ACCESS_MAINTAINER,
 };
 use gitlab_for_mac::gpui_app::{
@@ -452,6 +452,65 @@ fn mr_list_ci_status_badge_supports_running_spinner_and_opens_pipeline(cx: &mut 
         win.click("mr-list-ci-247", cx);
         assert_eq!(mrs_view.read(cx).selected_iid(), None, "clicking CI pill must not open MR detail");
         assert_eq!(state.read(cx).screen, Screen::Pipelines, "clicking CI pill should open pipeline view");
+    })
+    .unwrap();
+}
+
+#[gpui_kit::test]
+fn mr_detail_surfaces_merge_conflicts_even_when_rest_status_is_open_threads(cx: &mut TestAppContext) {
+    let (window, shell) = mount_mr_shell(cx);
+    let mut mr = sample_mr();
+    mr.detailed_merge_status = Some("discussions_not_resolved".into());
+    mr.blocking_discussions_resolved = Some(false);
+    let thread = Discussion {
+        id: "thread55".into(),
+        individual_note: false,
+        notes: vec![DiscussionNote {
+            id: 55,
+            body: "Needs rebase".into(),
+            created_at: Some("2026-10-27T08:20:00Z".into()),
+            author: Some(sample_user()),
+            system: false,
+            resolvable: true,
+            resolved: false,
+            position: None,
+        }],
+    };
+
+    cx.update_window(window, |_, _, cx| {
+        let state = shell.read(cx).state().clone();
+        let proj = state.read(cx).projects[0].clone();
+        state.update(cx, |s, cx| s.select_project_on_screen(proj, Screen::MergeRequests, cx));
+    })
+    .unwrap();
+    cx.run_until_parked();
+
+    cx.update_window(window, |_, win, cx| {
+        let state = shell.read(cx).state().clone();
+        state.update(cx, |s, cx| {
+            s.set_project_permissions(ProjectPermissions::with_level(ACCESS_MAINTAINER, false), cx);
+        });
+        let mrs = shell.read(cx).mrs_view().clone();
+        mrs.update(cx, |v, cx| {
+            v.set_fixture_data(
+                vec![mr.clone()], MrListCounts::default(), Some(mr.clone()), vec![thread], vec![],
+                mr.head_pipeline.clone().into_iter().collect(), vec![], vec![],
+                Some(MrApprovals { user_can_approve: true, ..MrApprovals::default() }),
+                vec![sample_user()], vec![], cx,
+            );
+            v.set_fixture_mergeability_checks(
+                vec![
+                    MergeabilityCheck { identifier: "DISCUSSIONS_NOT_RESOLVED".into(), status: "FAILED".into() },
+                    MergeabilityCheck { identifier: "CONFLICT".into(), status: "FAILED".into() },
+                ],
+                cx,
+            );
+        });
+        win.render_frame(cx);
+
+        assert!(win.find("mr-resolve-conflicts-link").visible());
+        assert!(win.find("mr-go-first-open-thread").visible());
+        assert!(win.try_find("mr-widget-auto-merge-btn").is_none(), "conflicting MR must not offer auto-merge");
     })
     .unwrap();
 }

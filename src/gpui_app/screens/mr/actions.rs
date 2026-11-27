@@ -7,11 +7,12 @@ use super::MergeRequestsView;
 
 impl MergeRequestsView {
     pub(crate) fn clear_detail(&mut self, cx: &mut Context<Self>) {
-        (self.detail_task, self.mutation_task, self.selected) = (None, None, None);
+        (self.detail_task, self.recheck_task, self.mutation_task, self.selected) = (None, None, None, None);
         self.active_tab = 0;
         self.approvals = None;
         self.approvals_expanded = false;
         self.merge_details_expanded = true;
+        self.mergeability_checks.clear();
         self.test_summary = None;
         self.test_summary_expanded = false;
         self.edit_commit_msg = false;

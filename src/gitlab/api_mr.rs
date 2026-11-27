@@ -47,7 +47,7 @@ impl GitLab {
 
     pub async fn merge_request_detail(&self, project_id: u64, iid: u64) -> Result<MergeRequest> {
         let path = format!(
-            "/projects/{project_id}/merge_requests/{iid}?include_diverged_commits_count=true&include_rebase_in_progress=true"
+            "/projects/{project_id}/merge_requests/{iid}?include_diverged_commits_count=true&include_rebase_in_progress=true&with_merge_status_recheck=true"
         );
         self.send(Method::GET, &path).await
     }

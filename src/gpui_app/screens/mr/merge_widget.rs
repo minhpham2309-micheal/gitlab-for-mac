@@ -11,11 +11,11 @@ use gpui_kit::{
 };
 
 use crate::gitlab::{
-    mr_can_review, mr_merge_readiness_with_threads, MergeCheckKind, MergeReadinessTone,
-    MergeRequest,
+    mr_can_review, mr_merge_readiness_full, MergeCheckKind, MergeReadinessTone, MergeRequest,
 };
 
 use super::super::super::pajamas_theme::status_color;
+use super::super::super::safe_url::safe_open_url;
 use super::MergeRequestsView;
 
 pub fn render_merge_widget(
@@ -26,7 +26,8 @@ pub fn render_merge_widget(
     let theme = cx.theme();
     let dark = theme.is_dark();
     let open_threads = view.unresolved_thread_indices().len();
-    let readiness = mr_merge_readiness_with_threads(mr, open_threads);
+    let readiness = mr_merge_readiness_full(mr, &view.mergeability_checks, open_threads);
+    let conflicts_url = format!("{}/conflicts", mr.web_url.trim_end_matches('/'));
     let can_review = mr_can_review(&mr.state);
     let perms = view.mr_permissions(mr, cx);
     let behind = mr.diverged_commits_count.unwrap_or(0);
@@ -87,6 +88,15 @@ pub fn render_merge_widget(
                     _ => status_color("failed", dark),
                 };
                 let action = match chk.kind {
+                    MergeCheckKind::Conflicts => {
+                        let url = conflicts_url.clone();
+                        Some(
+                            div().id("mr-resolve-conflicts-link").cursor_pointer().text_color(theme.link)
+                                .hover(|s| s.text_color(theme.link_hover))
+                                .on_click(move |_, _, _| { let _ = safe_open_url(&url); })
+                                .child("Resolve conflicts").test_support().into_any_element(),
+                        )
+                    }
                     MergeCheckKind::OpenThreads if open_threads > 0 => Some(
                         div().id("mr-go-first-open-thread").cursor_pointer().text_color(theme.link)
                             .hover(|s| s.text_color(theme.link_hover))
@@ -111,6 +121,12 @@ pub fn render_merge_widget(
                                 .child(div().text_color(theme.foreground).child(chk.message.clone())),
                         )
                         .children(action),
+                );
+            }
+            if readiness.is_checking {
+                checks_box = checks_box.child(
+                    div().id("mr-merge-rechecking").text_color(theme.muted_foreground)
+                        .child("Checking for merge conflicts and branch status…").test_support(),
                 );
             }
             body = body.child(checks_box);

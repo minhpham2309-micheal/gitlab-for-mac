@@ -35,9 +35,9 @@ use gpui_kit::{
 };
 
 use crate::gitlab::{
-    AwardEmoji, BridgeJob, Discussion, Job, MergeRequest, MrActivityFilter, MrApprovals, MrFilter,
-    MrListCounts, MrPermissions, MrSortField, Pipeline, PipelineTestSummary, RawDiff, RepoCommit,
-    SortDir, User,
+    AwardEmoji, BridgeJob, Discussion, Job, MergeRequest, MergeabilityCheck, MrActivityFilter,
+    MrApprovals, MrFilter, MrListCounts, MrPermissions, MrSortField, Pipeline, PipelineTestSummary,
+    RawDiff, RepoCommit, SortDir, User,
 };
 use crate::nav::Screen;
 
@@ -73,6 +73,7 @@ pub struct MergeRequestsView {
     pub(crate) approvals: Option<MrApprovals>,
     pub(crate) approvals_expanded: bool,
     pub(crate) merge_details_expanded: bool,
+    pub(crate) mergeability_checks: Vec<MergeabilityCheck>,
     pub(crate) test_summary: Option<PipelineTestSummary>,
     pub(crate) test_summary_expanded: bool,
     pub(crate) edit_commit_msg: bool,
@@ -113,6 +114,7 @@ pub struct MergeRequestsView {
     pub(crate) counts_task: Option<Task<()>>,
     pub(crate) pipelines_hydrate_task: Option<Task<()>>,
     pub(crate) detail_task: Option<Task<()>>,
+    pub(crate) recheck_task: Option<Task<()>>,
     pub(crate) members_task: Option<Task<()>>,
     pub(crate) mutation_task: Option<Task<()>>,
     _subs: Vec<Subscription>,
@@ -174,8 +176,8 @@ impl MergeRequestsView {
             page: 1, per_page: 20, next_page: None, counts: MrListCounts::default(),
             search_input, search_history: Vec::new(), mrs: Vec::new(), list_loading: false,
             selected: None, pending_iid: None, active_tab: 0, approvals: None,
-            approvals_expanded: false, merge_details_expanded: true, test_summary: None,
-            test_summary_expanded: false, edit_commit_msg: false, commit_msg_input,
+            approvals_expanded: false, merge_details_expanded: true, mergeability_checks: Vec::new(),
+            test_summary: None, test_summary_expanded: false, edit_commit_msg: false, commit_msg_input,
             remove_source_branch: false, squash_commits: false, commits: Vec::new(),
             mr_pipelines: Vec::new(), head_pipeline_jobs: Vec::new(), head_pipeline_bridges: Vec::new(),
             cached_stages: Vec::new(), cached_activity: Vec::new(),
@@ -186,8 +188,9 @@ impl MergeRequestsView {
             raw_diffs: Vec::new(), fallback_notices: Vec::new(), has_truncated: false,
             diff_state, discussions: Vec::new(), discussions_error: None, inline_target: None,
             replying_to: None, comment_preview: false, comment_input, reply_input, inline_input,
-            list_task: None, counts_task: None, pipelines_hydrate_task: None, detail_task: None, members_task: None,
-            mutation_task: None, _subs: vec![sub_search, sub_member, sub],
+            list_task: None, counts_task: None, pipelines_hydrate_task: None, detail_task: None,
+            recheck_task: None, members_task: None, mutation_task: None,
+            _subs: vec![sub_search, sub_member, sub],
         }
     }
 
