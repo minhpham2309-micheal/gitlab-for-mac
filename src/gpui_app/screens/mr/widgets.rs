@@ -12,25 +12,8 @@ use crate::gitlab::time_util::format_relative;
 use crate::gitlab::{mr_can_review, MergeRequest, Pipeline};
 
 use super::super::super::pajamas_theme::{status_color, status_icon_path};
-use super::super::pipeline_graph_model::{build_stage_columns, StageColumn};
 use super::merge_widget::render_merge_widget;
 use super::MergeRequestsView;
-
-fn stage_aggregate_status(col: &StageColumn) -> &'static str {
-    let (mut has_manual, mut has_skipped) = (false, false);
-    for card in &col.cards {
-        match card.job.status.as_str() {
-            "failed" => return "failed",
-            "running" | "preparing" | "canceling" => return "running",
-            "pending" | "created" => return "pending",
-            "canceled" | "cancelled" => return "canceled",
-            "manual" => has_manual = true,
-            "skipped" => has_skipped = true,
-            _ => {}
-        }
-    }
-    if has_manual { "manual" } else if has_skipped { "skipped" } else { "success" }
-}
 
 fn pipeline_verb(status: &str) -> &'static str {
     match status {
@@ -52,7 +35,7 @@ pub fn render_mr_widgets(
     let pipe = mr.head_pipeline.clone().or_else(|| view.mr_pipelines.first().cloned());
     div()
         .id("mr-widgets-stack")
-        .flex().flex_col().gap_3()
+        .pb_4().flex().flex_col().gap_3()
         .children(pipe.map(|p| render_pipeline_widget(view, &p, cx)))
         .child(render_approval_widget(view, mr, cx))
         .child(render_merge_widget(view, mr, cx))
@@ -74,18 +57,14 @@ fn render_pipeline_widget(
     let st_open = view.state.clone();
     let st_graph = view.state.clone();
 
-    let stages = build_stage_columns(&view.head_pipeline_jobs, &view.head_pipeline_bridges);
-    let stage_statuses: Vec<&'static str> = if stages.is_empty() {
-        vec![if pipe.status == "success" { "success" } else { "pending" }]
-    } else {
-        stages.iter().map(stage_aggregate_status).collect()
-    };
+    let fallback = [if pipe.status == "success" { "success" } else { "pending" }];
+    let stage_statuses: &[&'static str] = if view.cached_stages.is_empty() { &fallback } else { &view.cached_stages };
 
     let mut mini_graph = div()
         .id("mr-widget-pipeline-stages")
         .flex().items_center().cursor_pointer()
         .on_click(move |_, _, cx| st_graph.update(cx, |s, cx| s.open_pipeline(pid, cx)));
-    for (ix, st) in stage_statuses.into_iter().enumerate() {
+    for (ix, &st) in stage_statuses.iter().enumerate() {
         let sc = status_color(st, dark);
         if ix > 0 {
             mini_graph = mini_graph.child(div().w(px(6.)).h(px(1.5)).bg(theme.border));
@@ -175,7 +154,11 @@ fn render_approval_widget(
                     div().pl_2().border_l_1().border_color(theme.border).child(
                         Button::new("mr-approval-expand").ghost().xsmall()
                             .icon(Icon::new(if view.approvals_expanded { IconName::ChevronUp } else { IconName::ChevronDown }).size_3p5())
-                            .on_click(cx.listener(|this, _, _, cx| { this.approvals_expanded = !this.approvals_expanded; cx.notify(); })),
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.approvals_expanded = !this.approvals_expanded;
+                                this.overview_list.remeasure_items(1..2);
+                                cx.notify();
+                            })),
                     ),
                 ),
         );

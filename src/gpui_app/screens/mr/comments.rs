@@ -28,6 +28,7 @@ impl MergeRequestsView {
     pub fn start_reply(&mut self, disc_id: String, window: &mut Window, cx: &mut Context<Self>) {
         self.replying_to = Some(disc_id);
         self.reply_input.update(cx, |inp, cx| inp.set_value("", window, cx));
+        self.overview_list.remeasure();
         cx.notify();
     }
 
@@ -51,7 +52,7 @@ impl MergeRequestsView {
                     return;
                 }
                 match res {
-                    Ok(Ok(disc)) => view.discussions.push(disc),
+                    Ok(Ok(disc)) => { view.discussions.push(disc); view.rebuild_activity_cache(); }
                     Ok(Err(err)) | Err(err) => view.state.update(cx, |s, cx| s.set_status(err, cx)),
                 }
                 cx.notify();
@@ -88,7 +89,7 @@ impl MergeRequestsView {
                     return;
                 }
                 match res {
-                    Ok(Ok(disc)) => view.discussions.push(disc),
+                    Ok(Ok(disc)) => { view.discussions.push(disc); view.rebuild_activity_cache(); }
                     Ok(Err(err)) | Err(err) => view.state.update(cx, |s, cx| s.set_status(err, cx)),
                 }
                 cx.notify();
@@ -121,6 +122,7 @@ impl MergeRequestsView {
                         if let Some(d) = view.discussions.iter_mut().find(|d| d.id == id_copy) {
                             d.notes.push(note);
                         }
+                        view.overview_list.remeasure();
                     }
                     Ok(Err(err)) | Err(err) => view.state.update(cx, |s, cx| s.set_status(err, cx)),
                 }
@@ -150,6 +152,7 @@ impl MergeRequestsView {
                         if let Some(d) = view.discussions.iter_mut().find(|d| d.id == updated.id) {
                             *d = updated;
                         }
+                        view.overview_list.remeasure();
                     }
                     Ok(Err(err)) | Err(err) => view.state.update(cx, |s, cx| s.set_status(err, cx)),
                 }

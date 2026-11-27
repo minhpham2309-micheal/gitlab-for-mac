@@ -16,6 +16,9 @@ impl MergeRequestsView {
         self.mr_pipelines.clear();
         self.head_pipeline_jobs.clear();
         self.head_pipeline_bridges.clear();
+        self.cached_stages.clear();
+        self.cached_activity.clear();
+        self.overview_list.reset(4);
         self.participants.clear();
         self.award_emojis.clear();
         self.todo_added = false;

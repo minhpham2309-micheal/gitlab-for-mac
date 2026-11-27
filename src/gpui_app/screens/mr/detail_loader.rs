@@ -7,9 +7,19 @@ use crate::gitlab::{
 use crate::runtime::spawn_tokio;
 
 use super::super::super::diff_hl::parse_raw_diffs_individually;
+use super::cache::{build_activity_entries, compute_stage_statuses};
 use super::MergeRequestsView;
 
 impl MergeRequestsView {
+    pub(crate) fn rebuild_activity_cache(&mut self) {
+        self.cached_activity = build_activity_entries(&self.discussions, self.activity_filter, self.activity_desc);
+        self.overview_list.reset(4 + self.cached_activity.len());
+    }
+
+    pub(crate) fn rebuild_stage_cache(&mut self) {
+        self.cached_stages = compute_stage_statuses(&self.head_pipeline_jobs, &self.head_pipeline_bridges);
+        self.overview_list.remeasure_items(1..2);
+    }
     pub fn open_mr_by_iid(&mut self, iid: u64, cx: &mut Context<Self>) {
         if let Some(found) = self.mrs.iter().find(|m| m.iid == iid).cloned() {
             self.select_mr(found, false, cx);
@@ -116,6 +126,8 @@ impl MergeRequestsView {
                     view.award_emojis = awards;
                     view.head_pipeline_jobs = jobs;
                     view.head_pipeline_bridges = bridges;
+                    view.rebuild_stage_cache();
+                    view.rebuild_activity_cache();
                 }
                 cx.notify();
             });
@@ -142,6 +154,8 @@ impl MergeRequestsView {
         self.approvals = approvals;
         self.participants = participants;
         self.award_emojis = awards;
+        self.rebuild_stage_cache();
+        self.rebuild_activity_cache();
         self.sync_summary(cx);
         cx.notify();
     }

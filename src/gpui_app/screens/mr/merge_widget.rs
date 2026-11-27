@@ -67,7 +67,11 @@ pub fn render_merge_widget(
                             div().pl_2().border_l_1().border_color(theme.border).child(
                                 Button::new("mr-merge-expand").ghost().xsmall()
                                     .icon(Icon::new(if view.merge_details_expanded { IconName::ChevronUp } else { IconName::ChevronDown }).size_3p5())
-                                    .on_click(cx.listener(|this, _, _, cx| { this.merge_details_expanded = !this.merge_details_expanded; cx.notify(); })),
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.merge_details_expanded = !this.merge_details_expanded;
+                                        this.overview_list.remeasure_items(1..2);
+                                        cx.notify();
+                                    })),
                             ),
                         ),
                 ),

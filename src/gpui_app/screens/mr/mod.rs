@@ -2,6 +2,7 @@ mod actions;
 mod activity;
 pub mod annotations;
 mod breadcrumb;
+mod cache;
 mod changes;
 mod changes_chrome;
 mod comments;
@@ -25,8 +26,8 @@ use gpui_kit::{
         input::{InputEvent, InputState},
         ActiveTheme as _,
     },
-    div, AppContext as _, Context, Entity, IntoElement, ParentElement as _, Render, Styled as _,
-    Subscription, Task, Window,
+    div, px, AppContext as _, Context, Entity, IntoElement, ListAlignment, ListState,
+    ParentElement as _, Render, Styled as _, Subscription, Task, Window,
 };
 
 use crate::gitlab::{
@@ -39,6 +40,7 @@ use super::super::diff_hl::new_diff_state;
 use super::super::markdown::MarkdownProjectContext;
 use super::super::state::{AppEvent, AppState, ScreenCommand};
 use self::breadcrumb::render_mr_breadcrumb;
+use self::cache::ActivityEntry;
 use self::changes::render_mr_changes;
 use self::commits_tab::render_mr_commits_tab;
 use self::detail_header::render_mr_detail_header;
@@ -71,6 +73,9 @@ pub struct MergeRequestsView {
     pub(crate) mr_pipelines: Vec<Pipeline>,
     pub(crate) head_pipeline_jobs: Vec<Job>,
     pub(crate) head_pipeline_bridges: Vec<BridgeJob>,
+    pub(crate) cached_stages: Vec<&'static str>,
+    pub(crate) cached_activity: Vec<ActivityEntry>,
+    pub(crate) overview_list: ListState,
     pub(crate) participants: Vec<User>,
     pub(crate) award_emojis: Vec<AwardEmoji>,
     pub(crate) todo_added: bool,
@@ -136,6 +141,8 @@ impl MergeRequestsView {
             approvals_expanded: false, merge_details_expanded: true, remove_source_branch: false,
             squash_commits: false, commits: Vec::new(), mr_pipelines: Vec::new(),
             head_pipeline_jobs: Vec::new(), head_pipeline_bridges: Vec::new(),
+            cached_stages: Vec::new(), cached_activity: Vec::new(),
+            overview_list: ListState::new(4, ListAlignment::Top, px(240.)),
             participants: Vec::new(), award_emojis: Vec::new(), todo_added: false,
             activity_filter: MrActivityFilter::All, activity_desc: false,
             raw_diffs: Vec::new(), fallback_notices: Vec::new(), has_truncated: false,

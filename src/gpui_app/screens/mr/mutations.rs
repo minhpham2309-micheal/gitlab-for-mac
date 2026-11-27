@@ -126,8 +126,8 @@ impl MergeRequestsView {
                 let cur = v.state.read(cx);
                 if cur.host_epoch != h_ep || cur.project_epoch != p_ep || v.selected.as_ref().map(|m| m.iid) != Some(iid) { return; }
                 match res {
-                    Ok(Ok((Some(removed), None))) => v.award_emojis.retain(|a| a.id != removed),
-                    Ok(Ok((None, Some(added)))) => v.award_emojis.push(added),
+                    Ok(Ok((Some(removed), None))) => { v.award_emojis.retain(|a| a.id != removed); v.overview_list.remeasure_items(0..1); }
+                    Ok(Ok((None, Some(added)))) => { v.award_emojis.push(added); v.overview_list.remeasure_items(0..1); }
                     Ok(Err(e)) | Err(e) => v.state.update(cx, |s, cx| s.set_status(e, cx)),
                     _ => {}
                 }
@@ -180,6 +180,7 @@ impl MergeRequestsView {
                 match res {
                     Ok(Ok(updated)) => {
                         v.selected = Some(updated);
+                        v.overview_list.remeasure_items(0..1);
                         v.sync_summary(cx);
                         v.state.update(cx, |s, cx| s.set_status("Merge request updated", cx));
                         cx.notify();
