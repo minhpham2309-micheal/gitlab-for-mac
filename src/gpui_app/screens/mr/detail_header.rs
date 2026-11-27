@@ -11,7 +11,7 @@ use gpui_kit::{
 };
 
 use crate::gitlab::time_util::format_relative;
-use crate::gitlab::{mr_can_review, MergeRequest};
+use crate::gitlab::MergeRequest;
 
 use super::super::super::safe_url::safe_open_url;
 use super::MergeRequestsView;
@@ -36,8 +36,7 @@ pub fn render_mr_detail_header(
 ) -> impl IntoElement + use<> {
     let theme = cx.theme();
     let dark = theme.is_dark();
-    let can_review = mr_can_review(&mr.state);
-    let is_closed = mr.state == "closed";
+    let perms = view.mr_permissions(mr, cx);
     let (pill_bg, pill_fg, state_label) = mr_state_pill(mr, dark);
     let author = mr.author.as_ref().map(|a| a.username.clone()).unwrap_or_else(|| "unknown".into());
     let created_rel = mr.created_at.as_deref().map(format_relative).unwrap_or_default();
@@ -80,14 +79,14 @@ pub fn render_mr_detail_header(
         )
         .child(
             div().flex().items_center().gap_1p5().flex_shrink_0()
-                .child(
+                .children(perms.can_edit.then(|| {
                     div().id("mr-edit-btn").px_3().py_1().rounded_md().cursor_pointer()
                         .bg(theme.secondary).border_1().border_color(theme.border)
                         .hover(|s| s.bg(theme.secondary_hover))
                         .text_xs().text_color(theme.foreground)
                         .on_click(cx.listener(|this, _, window, cx| this.open_edit_mr_dialog(window, cx)))
-                        .child("Edit").test_support(),
-                )
+                        .child("Edit").test_support()
+                }))
                 .child(
                     Button::new("mr-code-menu").outline().small().label("Code ▾")
                         .dropdown_menu(move |menu, _, _| {
@@ -131,14 +130,13 @@ pub fn render_mr_detail_header(
                                         if let Some(m) = v.selected.clone() { v.select_mr(m, false, cx); }
                                     });
                                 }))
-                                .item(PopupMenuItem::new("Open in GitLab Web").on_click(move |_, _, _| { let _ = safe_open_url(&u); }))
-                                .separator();
-                            if can_review {
-                                menu = menu.item(PopupMenuItem::new("Close merge request").on_click(move |_, window, cx| {
+                                .item(PopupMenuItem::new("Open in GitLab Web").on_click(move |_, _, _| { let _ = safe_open_url(&u); }));
+                            if perms.can_close {
+                                menu = menu.separator().item(PopupMenuItem::new("Close merge request").on_click(move |_, window, cx| {
                                     let _ = w_mut.update(cx, |v, cx| v.perform_mr_mutation("close", Some(window), cx));
                                 }));
-                            } else if is_closed {
-                                menu = menu.item(PopupMenuItem::new("Reopen merge request").on_click(move |_, window, cx| {
+                            } else if perms.can_reopen {
+                                menu = menu.separator().item(PopupMenuItem::new("Reopen merge request").on_click(move |_, window, cx| {
                                     let _ = w_mut.update(cx, |v, cx| v.perform_mr_mutation("reopen", Some(window), cx));
                                 }));
                             }
@@ -192,7 +190,7 @@ pub fn render_mr_detail_header(
                 .child(div().px_1p5().py(px(1.)).rounded_full().bg(badge_bg).text_color(badge_fg).text_xs().font_semibold().child(cnt.to_string()))
                 .test_support()
         })))
-        .child(
+        .children(perms.can_todo.then(|| {
             div().pb_1p5().child(
                 div().id("mr-add-todo").px_3().py_1().rounded_md().cursor_pointer()
                     .bg(theme.secondary).border_1().border_color(theme.border)
@@ -201,8 +199,8 @@ pub fn render_mr_detail_header(
                     .on_click(cx.listener(|this, _, _, cx| this.add_mr_todo(cx)))
                     .child(if view.todo_added { "To-do added ✓" } else { "Add a to-do item" })
                     .test_support(),
-            ),
-        );
+            )
+        }));
 
     div()
         .w_full().px_6().pt_4().flex().flex_col().items_center()

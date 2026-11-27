@@ -26,6 +26,9 @@ pub mod log_sanitize;
 mod log_util;
 pub mod media;
 mod mr_readiness;
+pub mod permissions;
+#[cfg(test)]
+mod permissions_tests;
 pub mod repo_tree_util;
 pub mod time_util;
 mod trace_util;
@@ -40,6 +43,11 @@ pub use client::GitLab;
 pub use client_raw::MAX_VIEWER_BLOB_BYTES;
 pub use diff::{parse_unified_full, DiffKind, DiffLine, MrChange, MrDiff, RawDiff};
 pub use error::GitLabError;
+pub use permissions::{
+    MrPermissions, MrUserPermissions, ProjectAccess, ProjectPermissions, ProjectPermissionsRaw,
+    ACCESS_DEVELOPER, ACCESS_GUEST, ACCESS_MAINTAINER, ACCESS_MINIMAL, ACCESS_NONE, ACCESS_OWNER,
+    ACCESS_PLANNER, ACCESS_REPORTER,
+};
 pub use types::*;
 pub use types_project::*;
 pub use types_repo::*;

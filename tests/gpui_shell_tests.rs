@@ -155,10 +155,23 @@ fn palette_toggle_confirm_dialog_and_diff_mode_toggle_work(cx: &mut TestAppConte
     cx.update_window(window, |_, win, cx| {
         assert!(!win.has_active_dialog(cx));
         let state = shell.read(cx).state().clone();
+        // Even with an open MR active, lacking merge permission must still block MergeMrAction.
         state.update(cx, |s, _| {
             s.summary.can_review_mr = true;
+            s.summary.can_merge_mr = false;
             s.summary.active_mr_iid = Some(42);
             s.summary.active_mr_label = Some("!42 Fix race".into());
+        });
+        win.dispatch_action(Box::new(MergeMrAction), cx);
+    })
+    .unwrap();
+    cx.run_until_parked();
+
+    cx.update_window(window, |_, win, cx| {
+        assert!(!win.has_active_dialog(cx));
+        let state = shell.read(cx).state().clone();
+        state.update(cx, |s, _| {
+            s.summary.can_merge_mr = true;
         });
         win.dispatch_action(Box::new(MergeMrAction), cx);
     })

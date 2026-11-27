@@ -20,6 +20,7 @@ impl MergeRequestsView {
         self.cached_activity.clear();
         self.overview_list.reset(4);
         self.participants.clear();
+        self.member_picker = None;
         self.award_emojis.clear();
         self.todo_added = false;
         self.raw_diffs.clear();
@@ -33,8 +34,10 @@ impl MergeRequestsView {
     }
 
     pub(crate) fn reset_state(&mut self, cx: &mut Context<Self>) {
-        (self.list_task, self.counts_task) = (None, None);
+        (self.list_task, self.counts_task, self.members_task) = (None, None, None);
         self.mrs.clear();
+        self.project_members.clear();
+        (self.members_loading, self.members_loaded) = (false, false);
         self.counts = MrListCounts::default();
         self.page = 1;
         self.next_page = None;
@@ -46,8 +49,14 @@ impl MergeRequestsView {
 
     pub(crate) fn sync_summary(&self, cx: &mut Context<Self>) {
         let mr = self.selected.clone();
+        let approvals = self.approvals.clone();
         self.state.update(cx, |s, _| {
+            let me = s.current_user.as_ref().map(|u| u.id);
+            let perms = mr.as_ref().map(|m| s.project_permissions.mr_permissions(m, approvals.as_ref(), me));
             s.summary.can_review_mr = mr.as_ref().is_some_and(|m| mr_can_review(&m.state));
+            s.summary.can_approve_mr = perms.is_some_and(|p| p.can_approve);
+            s.summary.can_merge_mr = perms.is_some_and(|p| p.can_merge);
+            s.summary.can_close_mr = perms.is_some_and(|p| p.can_close);
             s.summary.active_mr_iid = mr.as_ref().map(|m| m.iid);
             s.summary.active_mr_label = mr.as_ref().map(|m| format!("!{} {}", m.iid, m.title));
             if let Some(m) = &mr {

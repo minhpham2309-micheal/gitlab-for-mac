@@ -2,6 +2,7 @@
 
 use serde::Deserialize;
 
+use super::permissions::MrUserPermissions;
 use super::types::{Pipeline, User};
 use super::types_review::DiffRefs;
 
@@ -69,6 +70,8 @@ pub struct MergeRequest {
     pub closed_at: Option<String>,
     #[serde(default)]
     pub sha: Option<String>,
+    #[serde(default)]
+    pub user: Option<MrUserPermissions>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

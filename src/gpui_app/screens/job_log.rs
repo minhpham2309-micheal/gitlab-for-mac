@@ -26,12 +26,14 @@ pub fn render_job_log(
             .into_any_element();
     };
 
+    let can_run_ci = view.state.read(cx).project_permissions.can_run_pipelines();
     let header = render_job_log_header(
         job,
         view.log_model.line_count(),
         view.auto_scroll_tail,
         view.wrap_lines,
         view.selection_bounds().is_some(),
+        can_run_ci,
         cx,
     );
     let search_bar = render_job_log_search_bar(

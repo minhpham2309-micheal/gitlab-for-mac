@@ -31,6 +31,7 @@ pub fn render_job_card(
     selected_job_id: Option<u64>,
     dark: bool,
     scale: f32,
+    can_run_ci: bool,
     cx: &mut Context<PipelinesView>,
 ) -> impl IntoElement {
     let theme = cx.theme();
@@ -66,7 +67,7 @@ pub fn render_job_card(
     };
 
     let mut actions = div().flex().items_center().gap_1().flex_shrink_0();
-    if !card.is_bridge {
+    if can_run_ci && !card.is_bridge {
         let btn = if job.status == "manual" {
             let j_play = job.clone();
             Button::new(SharedString::from(format!("jg-play-{job_id}")))

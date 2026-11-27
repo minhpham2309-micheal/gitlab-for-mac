@@ -7,8 +7,9 @@ use gpui_kit::{
 
 use gitlab_for_mac::config::HostAuth;
 use gitlab_for_mac::gitlab::{
-    Discussion, DiscussionNote, Job, MergeRequest, MrApprovals, MrFilter, MrListCounts, Pipeline,
-    Project, RawDiff, RepoCommit, User,
+    Discussion, DiscussionNote, Job, MergeRequest, MrApprovals, MrFilter, MrListCounts,
+    MrUserPermissions, Pipeline, Project, ProjectPermissions, RawDiff, RepoCommit, User,
+    ACCESS_MAINTAINER,
 };
 use gitlab_for_mac::gpui_app::{
     actions::{NavBack, NavForward},
@@ -85,6 +86,7 @@ fn sample_mr() -> MergeRequest {
         closed_by: None,
         closed_at: None,
         sha: Some("9fabcb25112233445566".into()),
+        user: Some(MrUserPermissions { can_merge: Some(true) }),
     }
 }
 
@@ -167,12 +169,16 @@ fn mr_list_and_detail_match_gitlab_layout_and_navigation(cx: &mut TestAppContext
     // 2. Verify full-width MR List View layout & filter tabs.
     cx.update_window(window, |_, win, cx| {
         let state = shell.read(cx).state().clone();
+        state.update(cx, |s, cx| {
+            s.set_project_permissions(ProjectPermissions::with_level(ACCESS_MAINTAINER, false), cx);
+        });
         let mrs_view = shell.read(cx).mrs_view().clone();
         mrs_view.update(cx, |v, cx| {
             v.set_fixture_data(
                 vec![mr.clone()], counts.clone(), None, vec![sys_disc.clone()], commits.clone(),
                 mr.head_pipeline.clone().into_iter().collect(), jobs.clone(), diffs.clone(),
-                Some(MrApprovals::default()), vec![sample_user()], vec![], cx,
+                Some(MrApprovals { user_can_approve: true, ..MrApprovals::default() }),
+                vec![sample_user()], vec![], cx,
             );
         });
         win.render_frame(cx);
@@ -207,7 +213,8 @@ fn mr_list_and_detail_match_gitlab_layout_and_navigation(cx: &mut TestAppContext
             v.set_fixture_data(
                 vec![mr.clone()], counts, Some(mr.clone()), vec![sys_disc], commits,
                 mr.head_pipeline.clone().into_iter().collect(), jobs, diffs,
-                Some(MrApprovals::default()), vec![sample_user()], vec![], cx,
+                Some(MrApprovals { user_can_approve: true, ..MrApprovals::default() }),
+                vec![sample_user()], vec![], cx,
             );
         });
         win.render_frame(cx);
@@ -255,7 +262,34 @@ fn mr_list_and_detail_match_gitlab_layout_and_navigation(cx: &mut TestAppContext
         win.click("mr-detail-tab-0", cx);
         win.render_frame(cx);
 
-        // 4. Edit button opens native Edit MR dialog.
+        // 4. Assignee & Reviewer Edit pickers open inline member list and toggle selection.
+        let bob = User { id: 9, username: "bob".into(), name: "Bob Reviewer".into(), avatar_url: None };
+        mrs_view.update(cx, |v, cx| v.set_fixture_members(vec![sample_user(), bob], cx));
+        win.render_frame(cx);
+
+        win.click("mr-sb-edit-assignees", cx);
+        win.render_frame(cx);
+        assert!(win.find("mr-member-picker").visible());
+        win.click("mr-member-opt-9", cx);
+        win.render_frame(cx);
+        assert_eq!(mrs_view.read(cx).selected_mr().unwrap().assignees.len(), 1);
+        assert_eq!(mrs_view.read(cx).selected_mr().unwrap().assignees[0].id, 9);
+        win.click("mr-member-unassign", cx);
+        win.render_frame(cx);
+        assert!(mrs_view.read(cx).selected_mr().unwrap().assignees.is_empty());
+
+        win.click("mr-sb-edit-reviewers", cx);
+        win.render_frame(cx);
+        assert!(win.find("mr-member-picker").visible());
+        win.click("mr-member-opt-9", cx);
+        win.render_frame(cx);
+        assert_eq!(mrs_view.read(cx).selected_mr().unwrap().reviewers.len(), 1);
+        assert_eq!(mrs_view.read(cx).selected_mr().unwrap().reviewers[0].id, 9);
+        win.click("mr-sb-edit-reviewers", cx);
+        win.render_frame(cx);
+        assert!(win.try_find("mr-member-picker").is_none());
+
+        // 5. Edit button opens native Edit MR dialog.
         win.click("mr-edit-btn", cx);
         assert!(win.has_active_dialog(cx));
         win.close_all_dialogs(cx);

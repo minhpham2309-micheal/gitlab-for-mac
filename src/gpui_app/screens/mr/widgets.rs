@@ -9,7 +9,7 @@ use gpui_kit::{
 };
 
 use crate::gitlab::time_util::format_relative;
-use crate::gitlab::{mr_can_review, MergeRequest, Pipeline};
+use crate::gitlab::{MergeRequest, Pipeline};
 
 use super::super::super::pajamas_theme::{status_color, status_icon_path};
 use super::merge_widget::render_merge_widget;
@@ -112,8 +112,9 @@ fn render_approval_widget(
 ) -> impl IntoElement + use<> {
     let theme = cx.theme();
     let dark = theme.is_dark();
-    let can_review = mr_can_review(&mr.state);
-    let user_approved = view.approvals.as_ref().is_some_and(|a| a.user_has_approved);
+    let perms = view.mr_permissions(mr, cx);
+    let show_approve_btn = perms.can_approve || perms.can_unapprove;
+    let user_approved = perms.can_unapprove;
     let status_text = match &view.approvals {
         Some(a) if !a.approved_by.is_empty() => {
             let names: Vec<String> = a.approved_by.iter().map(|u| u.user.username.clone()).collect();
@@ -139,7 +140,7 @@ fn render_approval_widget(
                 .child(
                     div().flex().items_center().gap_3().min_w_0()
                         .child(Icon::new(IconName::User).size(px(20.)).text_color(theme.muted_foreground))
-                        .children(can_review.then(|| {
+                        .children(show_approve_btn.then(|| {
                             let kind = if user_approved { "unapprove" } else { "approve" };
                             div().id("mr-widget-approve-btn").px_2p5().py_1().rounded_md().cursor_pointer()
                                 .bg(approve_bg).border_1().border_color(approve_border).text_color(approve_fg)

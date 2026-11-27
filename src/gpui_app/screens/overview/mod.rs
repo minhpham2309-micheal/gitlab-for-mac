@@ -79,6 +79,7 @@ impl ProjectOverviewView {
                     this.load_directory(false, cx);
                 }
             }
+            AppEvent::PermissionsChanged => cx.notify(),
             _ => {}
         });
         Self {

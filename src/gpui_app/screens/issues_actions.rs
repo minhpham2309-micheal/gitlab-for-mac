@@ -69,6 +69,7 @@ impl IssuesView {
         let body = self.comment_input.read(cx).value().trim().to_string();
         if body.is_empty() { return; }
         let st = self.state.read(cx);
+        if !st.project_permissions.can_comment() { return; }
         let (Some(issue), Some(client), Some(project)) =
             (self.selected.clone(), st.gitlab.clone(), st.project.clone())
         else { return; };
@@ -98,6 +99,9 @@ impl IssuesView {
         let (Some(issue), Some(client), Some(project)) =
             (self.selected.clone(), st.gitlab.clone(), st.project.clone())
         else { return; };
+        let me_id = st.current_user.as_ref().map(|u| u.id);
+        let is_author = me_id.is_some() && issue.author.as_ref().map(|a| a.id) == me_id;
+        if !st.project_permissions.can_manage_issue(is_author) { return; }
         let (h_ep, p_ep, iid) = (st.host_epoch, st.project_epoch, issue.iid);
         let host = st.active_host.as_ref().map(|h| h.hostname.clone()).unwrap_or_default();
         let weak = cx.entity().downgrade();

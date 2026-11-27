@@ -16,6 +16,7 @@ use super::pipelines::PipelinesView;
 pub fn render_pipelines_list(
     pipes: Vec<Pipeline>,
     selected_pipeline: Option<&Pipeline>,
+    can_run_ci: bool,
     cx: &mut Context<PipelinesView>,
 ) -> impl IntoElement + use<> {
     let theme = cx.theme();
@@ -37,14 +38,14 @@ pub fn render_pipelines_list(
             div()
                 .flex()
                 .gap_1()
-                .child(
+                .children(can_run_ci.then(|| {
                     Button::new("pipe-run")
                         .primary()
                         .xsmall()
                         .label("Run")
-                        .on_click(cx.listener(|this, _, w, cx| this.open_run_pipeline_dialog(w, cx))),
-                )
-                .children(selected_pipeline.map(|p| {
+                        .on_click(cx.listener(|this, _, w, cx| this.open_run_pipeline_dialog(w, cx)))
+                }))
+                .children(selected_pipeline.filter(|_| can_run_ci).map(|p| {
                     if pipeline_is_live(&p.status) {
                         Button::new("pipe-cancel")
                             .danger()

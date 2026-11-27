@@ -86,6 +86,7 @@ impl PipelinesView {
                 this.graph_zoom_pct = prefs.pipeline_graph_zoom();
                 cx.notify();
             }
+            AppEvent::PermissionsChanged => cx.notify(),
             AppEvent::Command(cmd) => this.handle_command(cmd.clone(), w, cx),
         });
         let (initial_wrap, initial_zoom) = {
@@ -107,6 +108,7 @@ impl PipelinesView {
     }
 
     fn handle_command(&mut self, cmd: ScreenCommand, window: &mut Window, cx: &mut Context<Self>) {
+        let can_ci = self.state.read(cx).project_permissions.can_run_pipelines();
         match cmd {
             ScreenCommand::Refresh if self.visible => self.load_pipelines(cx),
             ScreenCommand::ToggleFollowLog if self.visible => self.toggle_auto_scroll(cx),
@@ -115,18 +117,18 @@ impl PipelinesView {
             ScreenCommand::LogFindNext if self.visible => self.jump_search(true, cx),
             ScreenCommand::LogFindPrev if self.visible => self.jump_search(false, cx),
             ScreenCommand::CopyFullLog if self.visible => self.copy_all_log(cx),
-            ScreenCommand::RunPipeline => self.open_run_pipeline_dialog(window, cx),
-            ScreenCommand::RetryPipeline => self.run_pipeline_action("retry", cx),
-            ScreenCommand::CancelPipeline => self.run_pipeline_action("cancel", cx),
-            ScreenCommand::RetryJob => {
+            ScreenCommand::RunPipeline if can_ci => self.open_run_pipeline_dialog(window, cx),
+            ScreenCommand::RetryPipeline if can_ci => self.run_pipeline_action("retry", cx),
+            ScreenCommand::CancelPipeline if can_ci => self.run_pipeline_action("cancel", cx),
+            ScreenCommand::RetryJob if can_ci => {
                 if let Some(j) = self.selected_job.as_ref() { self.run_job_action(j.id, "retry", cx); }
             }
-            ScreenCommand::CancelJob => {
+            ScreenCommand::CancelJob if can_ci => {
                 if let Some(j) = self.selected_job.as_ref().filter(|j| job_is_live(&j.status)) {
                     self.run_job_action(j.id, "cancel", cx);
                 }
             }
-            ScreenCommand::PlayJob => {
+            ScreenCommand::PlayJob if can_ci => {
                 if let Some(j) = self.selected_job.as_ref().filter(|j| j.status == "manual") {
                     self.run_job_action(j.id, "play", cx);
                 }
@@ -191,12 +193,14 @@ impl PipelinesView {
 
 impl Render for PipelinesView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let left = render_pipelines_list(self.pipelines.clone(), self.selected_pipeline.as_ref(), cx);
+        let can_ci = self.state.read(cx).project_permissions.can_run_pipelines();
+        let left = render_pipelines_list(self.pipelines.clone(), self.selected_pipeline.as_ref(), can_ci, cx);
         let graph = render_stage_graph(
             &self.jobs,
             &self.bridges,
             self.selected_job.as_ref().map(|j| j.id),
             self.graph_zoom_pct,
+            can_ci,
             cx,
         );
         let log_view = render_job_log(self, cx);

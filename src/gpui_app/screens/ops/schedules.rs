@@ -39,6 +39,7 @@ impl SchedulesView {
             AppEvent::Command(ScreenCommand::Refresh) if this.state.read(cx).screen == Screen::Schedules => {
                 this.load(cx);
             }
+            AppEvent::PermissionsChanged => cx.notify(),
             _ => {}
         });
         Self { state, schedules: Vec::new(), selected_id: None, task: None, _sub }
@@ -65,6 +66,7 @@ impl SchedulesView {
 
     fn confirm_play(&mut self, sched: Schedule, window: &mut Window, cx: &mut Context<Self>) {
         let st = self.state.read(cx);
+        if !st.project_permissions.can_run_pipelines() { return; }
         let (Some(client), Some(project)) = (st.gitlab.clone(), st.project.clone()) else { return; };
         let (h_ep, p_ep) = (st.host_epoch, st.project_epoch);
         let host = st.active_host.as_ref().map(|h| h.hostname.clone()).unwrap_or_default();
@@ -111,6 +113,7 @@ impl Render for SchedulesView {
         let dark = theme.is_dark();
         let items = self.schedules.clone();
         let selected = self.selected_id;
+        let can_run_ci = self.state.read(cx).project_permissions.can_run_pipelines();
         let weak = cx.entity().downgrade();
 
         let list = uniform_list("schedules-uniform-list", items.len(), move |range, _, cx| {
@@ -153,7 +156,7 @@ impl Render for SchedulesView {
                                         .child(div().font_family(theme.mono_font_family.clone()).text_color(theme.muted_foreground).child(s.cron)),
                                 ),
                         )
-                        .child(
+                        .children(can_run_ci.then(|| {
                             Button::new(SharedString::from(format!("sched-play-{}", s.id)))
                                 .outline()
                                 .xsmall()
@@ -161,8 +164,8 @@ impl Render for SchedulesView {
                                 .on_click(move |_, w, cx| {
                                     cx.stop_propagation();
                                     let _ = w_play.update(cx, |v, cx| v.confirm_play(s_play.clone(), w, cx));
-                                }),
-                        )
+                                })
+                        }))
                 })
                 .collect()
         })

@@ -62,6 +62,7 @@ pub fn render_top_bar_right(state: &Entity<AppState>, cx: &mut App) -> impl Into
         .or_else(|| st.active_host.as_ref().and_then(|h| h.user.clone()))
         .unwrap_or_else(|| "U".into());
 
+    let perms = st.project_permissions;
     let plus_state = state.clone();
     let web_for_issue = project_web;
     let plus_btn = Button::new("topbar-quick-plus")
@@ -74,21 +75,27 @@ pub fn render_top_bar_right(state: &Entity<AppState>, cx: &mut App) -> impl Into
                 st_proj.update(cx, |s, cx| s.set_screen(Screen::Projects, cx));
             }));
             if let Some(web) = web_for_issue.clone() {
-                let st_run = plus_state.clone();
-                menu = menu.item(PopupMenuItem::new("Run pipeline").on_click(move |_, _, cx| {
-                    st_run.update(cx, |s, cx| {
-                        s.set_screen(Screen::Pipelines, cx);
-                        s.dispatch_command(ScreenCommand::RunPipeline, cx);
-                    });
-                }));
-                let mr_url = format!("{}/-/merge_requests/new", web.trim_end_matches('/'));
-                let issue_url = format!("{}/-/issues/new", web.trim_end_matches('/'));
-                menu = menu.item(PopupMenuItem::new("New merge request (Web)").on_click(move |_, _, _| {
-                    let _ = safe_open_url(&mr_url);
-                }));
-                menu = menu.item(PopupMenuItem::new("New issue (Web)").on_click(move |_, _, _| {
-                    let _ = safe_open_url(&issue_url);
-                }));
+                if perms.can_run_pipelines() {
+                    let st_run = plus_state.clone();
+                    menu = menu.item(PopupMenuItem::new("Run pipeline").on_click(move |_, _, cx| {
+                        st_run.update(cx, |s, cx| {
+                            s.set_screen(Screen::Pipelines, cx);
+                            s.dispatch_command(ScreenCommand::RunPipeline, cx);
+                        });
+                    }));
+                }
+                if perms.can_create_mr() {
+                    let mr_url = format!("{}/-/merge_requests/new", web.trim_end_matches('/'));
+                    menu = menu.item(PopupMenuItem::new("New merge request (Web)").on_click(move |_, _, _| {
+                        let _ = safe_open_url(&mr_url);
+                    }));
+                }
+                if perms.can_create_issue() {
+                    let issue_url = format!("{}/-/issues/new", web.trim_end_matches('/'));
+                    menu = menu.item(PopupMenuItem::new("New issue (Web)").on_click(move |_, _, _| {
+                        let _ = safe_open_url(&issue_url);
+                    }));
+                }
             }
             menu
         });

@@ -16,12 +16,15 @@ use super::super::pajamas_theme::status_color;
 use super::super::safe_url::safe_open_url;
 use super::issues::IssuesView;
 
+#[allow(clippy::too_many_arguments)]
 pub fn render_issue_detail(
     issue: Option<Issue>,
     notes: &[Note],
     comment_input: &Entity<InputState>,
     md_ctx: MarkdownProjectContext,
     client: Option<&GitLab>,
+    can_close: bool,
+    can_comment: bool,
     cx: &mut Context<IssuesView>,
 ) -> AnyElement {
     let Some(issue) = issue else {
@@ -116,7 +119,7 @@ pub fn render_issue_detail(
                                 .text_xs()
                                 .child(issue.state.clone()),
                         )
-                        .children(is_open.then(|| {
+                        .children((is_open && can_close).then(|| {
                             Button::new("issue-close")
                                 .danger()
                                 .xsmall()
@@ -144,7 +147,7 @@ pub fn render_issue_detail(
                 .child(desc_el),
         )
         .children(note_els)
-        .child(
+        .children(can_comment.then(|| {
             div()
                 .flex()
                 .items_center()
@@ -157,7 +160,7 @@ pub fn render_issue_detail(
                         .small()
                         .label("Comment")
                         .on_click(cx.listener(|this, _, w, cx| this.post_comment(w, cx))),
-                ),
-        )
+                )
+        }))
         .into_any_element()
 }

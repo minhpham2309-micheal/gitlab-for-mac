@@ -4,6 +4,7 @@ use reqwest::Method;
 
 use super::client::GitLab;
 use super::error::Result;
+use super::permissions::ProjectPermissions;
 use super::types_project::{LanguageSlice, ProjectDetail, ProjectOverviewCounts};
 use super::types_repo::{RepoCommit, RepoTag};
 
@@ -14,6 +15,11 @@ impl GitLab {
             &format!("/projects/{project_id}?statistics=true&license=true"),
         )
         .await
+    }
+
+    pub async fn project_permissions(&self, project_id: u64) -> Result<ProjectPermissions> {
+        let detail: ProjectDetail = self.send(Method::GET, &format!("/projects/{project_id}")).await?;
+        Ok(ProjectPermissions::from_detail(&detail))
     }
 
     pub async fn project_languages(&self, project_id: u64) -> Result<Vec<LanguageSlice>> {

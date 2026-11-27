@@ -103,7 +103,6 @@ impl MergeRequestsView {
                         view.remove_source_branch = full_mr.force_remove_source_branch.or(full_mr.should_remove_source_branch).unwrap_or(false);
                         view.squash_commits = full_mr.squash.unwrap_or(false);
                         view.selected = Some(full_mr);
-                        view.sync_summary(cx);
                     }
                     match diffs_res {
                         Ok(raw) => {
@@ -128,6 +127,7 @@ impl MergeRequestsView {
                     view.head_pipeline_bridges = bridges;
                     view.rebuild_stage_cache();
                     view.rebuild_activity_cache();
+                    view.sync_summary(cx);
                 }
                 cx.notify();
             });

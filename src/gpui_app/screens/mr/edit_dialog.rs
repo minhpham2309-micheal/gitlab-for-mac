@@ -13,6 +13,7 @@ use super::MergeRequestsView;
 impl MergeRequestsView {
     pub fn open_edit_mr_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(mr) = self.selected.clone() else { return; };
+        if !self.mr_permissions(&mr, cx).can_edit { return; }
         let st = self.state.read(cx);
         let (h_ep, p_ep, iid) = (st.host_epoch, st.project_epoch, mr.iid);
         let edit_web_url = format!("{}/edit", mr.web_url.trim_end_matches('/'));
