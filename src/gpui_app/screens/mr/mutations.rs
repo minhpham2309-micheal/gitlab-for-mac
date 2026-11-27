@@ -11,7 +11,7 @@ impl MergeRequestsView {
     fn mutation_allowed(&self, kind: &str, mr: &MergeRequest, cx: &gpui_kit::App) -> bool {
         let p = self.mr_permissions(mr, cx);
         match kind {
-            "merge" => p.can_merge,
+            "merge" | "auto_merge" => p.can_merge,
             "approve" => p.can_approve,
             "unapprove" => p.can_unapprove,
             "rebase" => p.can_rebase,
@@ -69,13 +69,15 @@ impl MergeRequestsView {
             return;
         }
         let (h_ep, p_ep, remove_br, squash) = (st.host_epoch, st.project_epoch, self.remove_source_branch, self.squash_commits);
+        let custom_msg = self.edit_commit_msg.then(|| self.commit_msg_input.read(cx).value().to_string());
         let mr_clone = mr.clone();
         self.mutation_task = Some(cx.spawn(async move |this, cx| {
             let res = spawn_tokio(async move {
                 match kind {
                     "approve" => client.approve_mr(project.id, mr.iid).await.map(|_| "MR approved".to_string()),
                     "unapprove" => client.unapprove_mr(project.id, mr.iid).await.map(|_| "Approval revoked".to_string()),
-                    "merge" => client.merge_mr_with_options(project.id, mr.iid, remove_br, squash).await.map(|_| "MR merged".to_string()),
+                    "merge" => client.merge_mr_with_options(project.id, mr.iid, remove_br, squash, false, custom_msg.as_deref()).await.map(|_| "MR merged".to_string()),
+                    "auto_merge" => client.merge_mr_with_options(project.id, mr.iid, remove_br, squash, true, custom_msg.as_deref()).await.map(|_| "Auto-merge enabled".to_string()),
                     "rebase" => client.rebase_mr(project.id, mr.iid).await.map(|_| "Rebase started".to_string()),
                     "reopen" => client.reopen_mr(project.id, mr.iid).await.map(|_| "MR reopened".to_string()),
                     _ => client.close_mr(project.id, mr.iid).await.map(|_| "MR closed".to_string()),

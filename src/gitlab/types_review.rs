@@ -1,8 +1,58 @@
 #![allow(dead_code)]
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use super::types::User;
+
+fn null_to_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Default + Deserialize<'de>,
+{
+    Ok(Option::<T>::deserialize(deserializer)?.unwrap_or_default())
+}
+
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+pub struct PipelineTestTotals {
+    #[serde(default, deserialize_with = "null_to_default")]
+    pub time: f64,
+    #[serde(default, deserialize_with = "null_to_default")]
+    pub count: u32,
+    #[serde(default, deserialize_with = "null_to_default")]
+    pub success: u32,
+    #[serde(default, deserialize_with = "null_to_default")]
+    pub failed: u32,
+    #[serde(default, deserialize_with = "null_to_default")]
+    pub skipped: u32,
+    #[serde(default, deserialize_with = "null_to_default")]
+    pub error: u32,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+pub struct TestSuiteSummary {
+    #[serde(default, deserialize_with = "null_to_default")]
+    pub name: String,
+    #[serde(default, deserialize_with = "null_to_default")]
+    pub total_time: f64,
+    #[serde(default, deserialize_with = "null_to_default")]
+    pub total_count: u32,
+    #[serde(default, deserialize_with = "null_to_default")]
+    pub success_count: u32,
+    #[serde(default, deserialize_with = "null_to_default")]
+    pub failed_count: u32,
+    #[serde(default, deserialize_with = "null_to_default")]
+    pub skipped_count: u32,
+    #[serde(default, deserialize_with = "null_to_default")]
+    pub error_count: u32,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+pub struct PipelineTestSummary {
+    #[serde(default, deserialize_with = "null_to_default")]
+    pub total: PipelineTestTotals,
+    #[serde(default, deserialize_with = "null_to_default")]
+    pub test_suites: Vec<TestSuiteSummary>,
+}
 
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
 pub struct DiffRefs {

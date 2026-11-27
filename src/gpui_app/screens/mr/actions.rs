@@ -12,6 +12,11 @@ impl MergeRequestsView {
         self.approvals = None;
         self.approvals_expanded = false;
         self.merge_details_expanded = true;
+        self.test_summary = None;
+        self.test_summary_expanded = false;
+        self.edit_commit_msg = false;
+        self.comment_preview = false;
+        self.open_thread_cursor = 0;
         self.commits.clear();
         self.mr_pipelines.clear();
         self.head_pipeline_jobs.clear();

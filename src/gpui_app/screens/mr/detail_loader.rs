@@ -1,8 +1,8 @@
 use gpui_kit::Context;
 
 use crate::gitlab::{
-    AwardEmoji, Discussion, Job, MergeRequest, MrApprovals, MrListCounts, Pipeline, RawDiff,
-    RepoCommit, User,
+    AwardEmoji, Discussion, Job, MergeRequest, MrApprovals, MrListCounts, Pipeline,
+    PipelineTestSummary, RawDiff, RepoCommit, User,
 };
 use crate::runtime::spawn_tokio;
 
@@ -76,29 +76,30 @@ impl MergeRequestsView {
                 );
                 let head_pid = detail.as_ref().ok().and_then(|m| m.head_pipeline.as_ref().map(|p| p.id))
                     .or_else(|| pipelines.as_ref().ok().and_then(|ps| ps.first().map(|p| p.id)));
-                let (jobs, bridges) = match head_pid {
+                let (jobs, bridges, test_summary) = match head_pid {
                     Some(pid) => {
-                        let (j, b) = tokio::join!(
+                        let (j, b, ts) = tokio::join!(
                             client.pipeline_jobs_all(project.id, pid),
                             client.pipeline_bridges(project.id, pid),
+                            client.pipeline_test_report_summary(project.id, pid),
                         );
-                        (j.unwrap_or_default(), b.unwrap_or_default())
+                        (j.unwrap_or_default(), b.unwrap_or_default(), ts.ok().flatten())
                     }
-                    None => (Vec::new(), Vec::new()),
+                    None => (Vec::new(), Vec::new(), None),
                 };
                 (
                     detail.map_err(|e| e.to_string()), diffs.map_err(|e| e.to_string()),
                     discussions.map_err(|e| e.to_string()), approvals.ok().flatten(),
                     commits.unwrap_or_default(), pipelines.unwrap_or_default(),
                     participants.unwrap_or_default(), awards.unwrap_or_default(),
-                    jobs, bridges,
+                    jobs, bridges, test_summary,
                 )
             }).await;
             let _ = this.update(cx, |view, cx| {
                 let cur = view.state.read(cx);
                 let still_sel = view.selected.as_ref().is_some_and(|m| m.iid == iid);
                 if cur.host_epoch != h_ep || cur.project_epoch != p_ep || !still_sel { return; }
-                if let Ok((detail_res, diffs_res, disc_res, appr, commits, pipes, parts, awards, jobs, bridges)) = res {
+                if let Ok((detail_res, diffs_res, disc_res, appr, commits, pipes, parts, awards, jobs, bridges, test_summary)) = res {
                     if let Ok(full_mr) = detail_res {
                         view.remove_source_branch = full_mr.force_remove_source_branch.or(full_mr.should_remove_source_branch).unwrap_or(false);
                         view.squash_commits = full_mr.squash.unwrap_or(false);
@@ -125,6 +126,7 @@ impl MergeRequestsView {
                     view.award_emojis = awards;
                     view.head_pipeline_jobs = jobs;
                     view.head_pipeline_bridges = bridges;
+                    view.test_summary = test_summary;
                     view.rebuild_stage_cache();
                     view.rebuild_activity_cache();
                     view.sync_summary(cx);
@@ -157,6 +159,12 @@ impl MergeRequestsView {
         self.rebuild_stage_cache();
         self.rebuild_activity_cache();
         self.sync_summary(cx);
+        cx.notify();
+    }
+
+    pub fn set_fixture_test_summary(&mut self, summary: Option<PipelineTestSummary>, cx: &mut Context<Self>) {
+        self.test_summary = summary;
+        self.overview_list.remeasure_items(1..2);
         cx.notify();
     }
 }

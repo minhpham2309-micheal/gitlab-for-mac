@@ -34,6 +34,53 @@ impl MergeRequestsView {
         cx.notify();
     }
 
+    pub fn cancel_reply(&mut self, cx: &mut Context<Self>) {
+        self.replying_to = None;
+        self.overview_list.remeasure();
+        cx.notify();
+    }
+
+    pub fn append_comment_snippet(&mut self, snippet: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let mut next = self.comment_input.read(cx).value().to_string();
+        next.push_str(snippet);
+        self.comment_input.update(cx, |inp, cx| inp.set_value(next, window, cx));
+        cx.notify();
+    }
+
+    pub(crate) fn unresolved_thread_indices(&self) -> Vec<usize> {
+        self.cached_activity
+            .iter()
+            .enumerate()
+            .filter_map(|(ix, entry)| {
+                let super::cache::ActivityEntry::Thread { discussion_ix } = entry else { return None; };
+                let disc = self.discussions.get(*discussion_ix)?;
+                let first = disc.notes.iter().find(|n| !n.system)?;
+                (first.resolvable && !first.resolved).then_some(3 + ix)
+            })
+            .collect()
+    }
+
+    pub(crate) fn jump_to_open_thread(&mut self, step: isize, cx: &mut Context<Self>) {
+        let targets = self.unresolved_thread_indices();
+        if targets.is_empty() { return; }
+        self.active_tab = 0;
+        let len = targets.len();
+        let next = if step == 0 {
+            0
+        } else {
+            (self.open_thread_cursor as isize + step).rem_euclid(len as isize) as usize
+        };
+        self.open_thread_cursor = next;
+        self.overview_list.scroll_to_reveal_item(targets[next]);
+        cx.notify();
+    }
+
+    pub fn jump_to_comment_composer(&mut self, cx: &mut Context<Self>) {
+        self.active_tab = 0;
+        self.overview_list.scroll_to_reveal_item(3 + self.cached_activity.len());
+        cx.notify();
+    }
+
     pub fn submit_mr_comment(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let body = self.comment_input.read(cx).value().trim().to_string();
         if body.is_empty() { return; }

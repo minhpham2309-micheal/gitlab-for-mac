@@ -1,10 +1,18 @@
 #![allow(dead_code)]
 
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 
 use super::permissions::MrUserPermissions;
 use super::types::{Pipeline, User};
 use super::types_review::DiffRefs;
+
+fn null_to_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Default + Deserialize<'de>,
+{
+    Ok(Option::<T>::deserialize(deserializer)?.unwrap_or_default())
+}
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct MergeRequest {
@@ -118,17 +126,17 @@ pub struct MrApprovalUser {
 
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct MrApprovals {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_to_default")]
     pub approved: bool,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_to_default")]
     pub approvals_required: u32,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_to_default")]
     pub approvals_left: u32,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_to_default")]
     pub user_has_approved: bool,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_to_default")]
     pub user_can_approve: bool,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_to_default")]
     pub approved_by: Vec<MrApprovalUser>,
 }
 

@@ -3,8 +3,8 @@
 use serde::Deserialize;
 
 pub use super::mr_readiness::{
-    mr_merge_readiness, parse_system_note, MergeReadiness, MergeReadinessTone, ParsedSystemNote,
-    SystemCommitEntry,
+    mr_merge_readiness, mr_merge_readiness_with_threads, parse_system_note, MergeCheckFailure,
+    MergeCheckKind, MergeReadiness, MergeReadinessTone, ParsedSystemNote, SystemCommitEntry,
 };
 pub use super::types_mr::{
     AwardEmoji, MergeRequest, Milestone, MrActivityFilter, MrApprovalUser, MrApprovals,
@@ -12,7 +12,8 @@ pub use super::types_mr::{
 };
 pub use super::types_review::{
     Branch, BridgeJob, DiffPosition, DiffRefs, Discussion, DiscussionNote, IssueFilter,
-    RawTraceChunk, ReleaseLinks, TodoProject, TodoTarget,
+    PipelineTestSummary, PipelineTestTotals, RawTraceChunk, ReleaseLinks, TestSuiteSummary,
+    TodoProject, TodoTarget,
 };
 
 #[derive(Debug, Clone, Deserialize)]

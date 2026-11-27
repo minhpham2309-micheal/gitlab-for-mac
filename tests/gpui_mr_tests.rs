@@ -8,8 +8,8 @@ use gpui_kit::{
 use gitlab_for_mac::config::HostAuth;
 use gitlab_for_mac::gitlab::{
     Discussion, DiscussionNote, Job, MergeRequest, MrApprovals, MrFilter, MrListCounts,
-    MrUserPermissions, Pipeline, Project, ProjectPermissions, RawDiff, RepoCommit, User,
-    ACCESS_MAINTAINER,
+    MrUserPermissions, Pipeline, PipelineTestSummary, PipelineTestTotals, Project,
+    ProjectPermissions, RawDiff, RepoCommit, TestSuiteSummary, User, ACCESS_MAINTAINER,
 };
 use gitlab_for_mac::gpui_app::{
     actions::{NavBack, NavForward},
@@ -227,8 +227,10 @@ fn mr_list_and_detail_match_gitlab_layout_and_navigation(cx: &mut TestAppContext
         let widgets = win.find("mr-widgets-stack").bounds();
         let activity = win.find("mr-activity-section").bounds();
         let sidebar = win.find("mr-metadata-sidebar").bounds();
-        let todo = win.find("mr-add-todo").bounds();
+        let tabs_right = win.find("mr-tabs-right").bounds();
 
+        assert!(win.find("mr-add-todo").visible());
+        assert!(win.find("mr-your-review-btn").visible());
         assert!(win.find("mr-widget-pipeline").visible());
         assert!(win.find("mr-widget-approval").visible());
         assert!(win.find("mr-widget-merge").visible());
@@ -242,7 +244,7 @@ fn mr_list_and_detail_match_gitlab_layout_and_navigation(cx: &mut TestAppContext
         assert_eq!(desc.size.width, widgets.size.width, "desc width shrank vs widgets");
         assert_eq!(activity.size.width, widgets.size.width, "activity width shrank vs widgets");
         assert!((sidebar.left() - widgets.right() - px(24.)).abs() <= px(1.), "gap between widgets={widgets:?} and sidebar={sidebar:?} drifted");
-        assert_eq!(sidebar.right(), todo.right(), "sidebar right edge misaligned with header right edge");
+        assert_eq!(sidebar.right(), tabs_right.right(), "sidebar right edge misaligned with header right edge");
 
         // 3. Switch detail tabs (Overview -> Commits -> Pipelines -> Changes -> Overview).
         win.click("mr-detail-tab-1", cx);
@@ -323,6 +325,87 @@ fn mr_list_and_detail_match_gitlab_layout_and_navigation(cx: &mut TestAppContext
     cx.update_window(window, |_, _, cx| {
         let mrs_view = shell.read(cx).mrs_view().clone();
         assert_eq!(mrs_view.read(cx).selected_iid(), None);
+    })
+    .unwrap();
+}
+
+#[gpui_kit::test]
+fn mr_detail_renders_test_summary_open_threads_auto_merge_and_composer(cx: &mut TestAppContext) {
+    let (window, shell) = mount_mr_shell(cx);
+    let mut mr = sample_mr();
+    mr.detailed_merge_status = Some("discussions_not_resolved".into());
+    mr.blocking_discussions_resolved = Some(false);
+    let thread = Discussion {
+        id: "thread99".into(),
+        individual_note: false,
+        notes: vec![DiscussionNote {
+            id: 42,
+            body: "LGTM".into(),
+            created_at: Some("2026-10-27T08:20:00Z".into()),
+            author: Some(sample_user()),
+            system: false,
+            resolvable: true,
+            resolved: false,
+            position: None,
+        }],
+    };
+    let test_summary = PipelineTestSummary {
+        total: PipelineTestTotals { time: 12.5, count: 684, success: 684, failed: 0, skipped: 0, error: 0 },
+        test_suites: vec![TestSuiteSummary {
+            name: "JUnit".into(), total_time: 12.5, total_count: 684,
+            success_count: 684, failed_count: 0, skipped_count: 0, error_count: 0,
+        }],
+    };
+
+    cx.update_window(window, |_, _, cx| {
+        let state = shell.read(cx).state().clone();
+        let proj = state.read(cx).projects[0].clone();
+        state.update(cx, |s, cx| s.select_project_on_screen(proj, Screen::MergeRequests, cx));
+    })
+    .unwrap();
+    cx.run_until_parked();
+
+    cx.update_window(window, |_, win, cx| {
+        let state = shell.read(cx).state().clone();
+        state.update(cx, |s, cx| {
+            s.set_project_permissions(ProjectPermissions::with_level(ACCESS_MAINTAINER, false), cx);
+        });
+        let mrs = shell.read(cx).mrs_view().clone();
+        mrs.update(cx, |v, cx| {
+            v.set_fixture_data(
+                vec![mr.clone()], MrListCounts::default(), Some(mr.clone()), vec![thread], vec![],
+                mr.head_pipeline.clone().into_iter().collect(), vec![], vec![],
+                Some(MrApprovals { user_can_approve: true, ..MrApprovals::default() }),
+                vec![sample_user()], vec![], cx,
+            );
+            v.set_fixture_test_summary(Some(test_summary), cx);
+        });
+        win.render_frame(cx);
+
+        assert!(win.find("mr-open-threads-nav").visible());
+        assert!(win.find("mr-your-review-btn").visible());
+        assert!(win.find("mr-widget-approve-btn").visible());
+        assert!(win.find("mr-widget-test-summary").visible());
+        assert!(win.find("mr-test-full-report").visible());
+        assert!(win.find("mr-go-first-open-thread").visible());
+        assert!(win.find("mr-widget-auto-merge-btn").visible());
+
+        // Clicking "Go to first open thread" reveals the unresolved discussion card and inline Reply bar.
+        win.click("mr-go-first-open-thread", cx);
+        win.render_frame(cx);
+        assert!(win.find("mr-disc-card-thread99").visible());
+        assert!(win.find("rep-thread99").visible());
+        win.click("rep-thread99", cx);
+        win.render_frame(cx);
+
+        // Reveal composer and toggle Write / Preview tabs.
+        mrs.update(cx, |v, cx| v.jump_to_comment_composer(cx));
+        win.render_frame(cx);
+        assert!(win.find("mr-comment-composer").visible());
+        win.click("mr-composer-preview", cx);
+        win.render_frame(cx);
+        win.click("mr-composer-write", cx);
+        win.render_frame(cx);
     })
     .unwrap();
 }
