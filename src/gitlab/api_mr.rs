@@ -47,7 +47,7 @@ impl GitLab {
 
     pub async fn merge_request_detail(&self, project_id: u64, iid: u64) -> Result<MergeRequest> {
         let path = format!(
-            "/projects/{project_id}/merge_requests/{iid}?include_diverged_commits_count=true&include_rebase_in_progress=true"
+            "/projects/{project_id}/merge_requests/{iid}?include_diverged_commits_count=true&include_rebase_in_progress=true&with_merge_status_recheck=true"
         );
         self.send(Method::GET, &path).await
     }
@@ -66,9 +66,23 @@ impl GitLab {
     }
 
     pub async fn merge_mr_with_options(
-        &self, project_id: u64, iid: u64, remove_source_branch: bool, squash: bool,
+        &self,
+        project_id: u64,
+        iid: u64,
+        remove_source_branch: bool,
+        squash: bool,
+        auto_merge: bool,
+        commit_message: Option<&str>,
     ) -> Result<()> {
-        let body = json!({ "should_remove_source_branch": remove_source_branch, "squash": squash });
+        let mut body = json!({ "should_remove_source_branch": remove_source_branch, "squash": squash });
+        if auto_merge {
+            body["auto_merge"] = json!(true);
+            body["merge_when_pipeline_succeeds"] = json!(true);
+        }
+        if let Some(msg) = commit_message.map(str::trim).filter(|s| !s.is_empty()) {
+            let key = if squash { "squash_commit_message" } else { "merge_commit_message" };
+            body[key] = json!(msg);
+        }
         let _: serde_json::Value = self
             .send_body(Method::PUT, &format!("/projects/{project_id}/merge_requests/{iid}/merge"), Some(body))
             .await?;

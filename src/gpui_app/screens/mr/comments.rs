@@ -6,6 +6,7 @@ use gpui_kit::{
 use crate::runtime::spawn_tokio;
 
 use super::annotations::resolve_diff_position;
+use super::detail_loader::apply_mergeability_snapshot;
 use super::MergeRequestsView;
 
 impl MergeRequestsView {
@@ -31,6 +32,53 @@ impl MergeRequestsView {
         self.replying_to = Some(disc_id);
         self.reply_input.update(cx, |inp, cx| inp.set_value("", window, cx));
         self.overview_list.remeasure();
+        cx.notify();
+    }
+
+    pub fn cancel_reply(&mut self, cx: &mut Context<Self>) {
+        self.replying_to = None;
+        self.overview_list.remeasure();
+        cx.notify();
+    }
+
+    pub fn append_comment_snippet(&mut self, snippet: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let mut next = self.comment_input.read(cx).value().to_string();
+        next.push_str(snippet);
+        self.comment_input.update(cx, |inp, cx| inp.set_value(next, window, cx));
+        cx.notify();
+    }
+
+    pub(crate) fn unresolved_thread_indices(&self) -> Vec<usize> {
+        self.cached_activity
+            .iter()
+            .enumerate()
+            .filter_map(|(ix, entry)| {
+                let super::cache::ActivityEntry::Thread { discussion_ix } = entry else { return None; };
+                let disc = self.discussions.get(*discussion_ix)?;
+                let first = disc.notes.iter().find(|n| !n.system)?;
+                (first.resolvable && !first.resolved).then_some(3 + ix)
+            })
+            .collect()
+    }
+
+    pub(crate) fn jump_to_open_thread(&mut self, step: isize, cx: &mut Context<Self>) {
+        let targets = self.unresolved_thread_indices();
+        if targets.is_empty() { return; }
+        self.active_tab = 0;
+        let len = targets.len();
+        let next = if step == 0 {
+            0
+        } else {
+            (self.open_thread_cursor as isize + step).rem_euclid(len as isize) as usize
+        };
+        self.open_thread_cursor = next;
+        self.overview_list.scroll_to_reveal_item(targets[next]);
+        cx.notify();
+    }
+
+    pub fn jump_to_comment_composer(&mut self, cx: &mut Context<Self>) {
+        self.active_tab = 0;
+        self.overview_list.scroll_to_reveal_item(3 + self.cached_activity.len());
         cx.notify();
     }
 
@@ -143,7 +191,12 @@ impl MergeRequestsView {
         let (h_ep, p_ep, iid) = (st.host_epoch, st.project_epoch, mr.iid);
         self.mutation_task = Some(cx.spawn(async move |this, cx| {
             let res = spawn_tokio(async move {
-                client.resolve_mr_discussion(project.id, iid, &disc_id, resolved).await.map_err(|e| e.to_string())
+                let updated = client.resolve_mr_discussion(project.id, iid, &disc_id, resolved).await.map_err(|e| e.to_string())?;
+                let (detail, snap) = tokio::join!(
+                    client.merge_request_detail(project.id, iid),
+                    client.mr_mergeability_checks(&project.path_with_namespace, iid),
+                );
+                Ok::<_, String>((updated, detail.ok(), snap))
             })
             .await;
             let _ = this.update(cx, |view, cx| {
@@ -152,9 +205,13 @@ impl MergeRequestsView {
                     return;
                 }
                 match res {
-                    Ok(Ok(updated)) => {
+                    Ok(Ok((updated, fresh_mr, snap))) => {
                         if let Some(d) = view.discussions.iter_mut().find(|d| d.id == updated.id) {
                             *d = updated;
+                        }
+                        if let Some(mut fresh) = fresh_mr {
+                            view.mergeability_checks = apply_mergeability_snapshot(&mut fresh, snap);
+                            view.selected = Some(fresh);
                         }
                         view.overview_list.remeasure();
                     }

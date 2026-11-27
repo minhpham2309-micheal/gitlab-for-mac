@@ -13,6 +13,7 @@ use crate::gitlab::{MergeRequest, Pipeline};
 
 use super::super::super::pajamas_theme::{status_color, status_icon_path};
 use super::merge_widget::render_merge_widget;
+use super::test_summary_widget::render_test_summary_widget;
 use super::MergeRequestsView;
 
 fn pipeline_verb(status: &str) -> &'static str {
@@ -38,6 +39,7 @@ pub fn render_mr_widgets(
         .w_full().pb_4().flex().flex_col().gap_3()
         .children(pipe.map(|p| render_pipeline_widget(view, &p, cx)))
         .child(render_approval_widget(view, mr, cx))
+        .children(render_test_summary_widget(view, mr, cx))
         .child(render_merge_widget(view, mr, cx))
         .test_support()
 }
@@ -139,7 +141,7 @@ fn render_approval_widget(
             div().px_4().py_2p5().flex().items_center().justify_between().gap_3()
                 .child(
                     div().flex().items_center().gap_3().min_w_0()
-                        .child(Icon::new(IconName::User).size(px(20.)).text_color(theme.muted_foreground))
+                        .child(Icon::new(IconName::ThumbsUp).size(px(18.)).text_color(theme.muted_foreground))
                         .children(show_approve_btn.then(|| {
                             let kind = if user_approved { "unapprove" } else { "approve" };
                             div().id("mr-widget-approve-btn").px_2p5().py_1().rounded_md().cursor_pointer()

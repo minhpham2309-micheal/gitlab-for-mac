@@ -4,6 +4,7 @@ mod api;
 mod api_ci;
 mod api_discussions;
 mod api_mr;
+mod api_mr_checks;
 mod api_ops;
 mod api_repo;
 mod api_repo_meta;
@@ -26,10 +27,13 @@ pub mod log_sanitize;
 mod log_util;
 pub mod media;
 mod mr_readiness;
+#[cfg(test)]
+mod mr_readiness_tests;
 pub mod permissions;
 #[cfg(test)]
 mod permissions_tests;
 pub mod repo_tree_util;
+mod system_notes;
 pub mod time_util;
 mod trace_util;
 mod types;

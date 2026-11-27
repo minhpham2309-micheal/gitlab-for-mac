@@ -7,6 +7,7 @@ mod changes;
 mod changes_chrome;
 mod comments;
 mod commits_tab;
+mod composer;
 mod detail_header;
 mod detail_loader;
 mod discussion_card;
@@ -20,12 +21,13 @@ mod mutations;
 mod overview;
 mod pipelines_tab;
 mod sidebar;
+mod test_summary_widget;
 mod widgets;
 
 use gpui_kit::{
     component::{
         diff::{DiffLinePosition, DiffMode, DiffState},
-        input::{InputEvent, InputState},
+        input::{InputEvent, InputState, TextareaState},
         ActiveTheme as _,
     },
     div, px, AppContext as _, Context, Entity, IntoElement, ListAlignment, ListState,
@@ -33,8 +35,9 @@ use gpui_kit::{
 };
 
 use crate::gitlab::{
-    AwardEmoji, BridgeJob, Discussion, Job, MergeRequest, MrActivityFilter, MrApprovals, MrFilter,
-    MrListCounts, MrPermissions, MrSortField, Pipeline, RawDiff, RepoCommit, SortDir, User,
+    AwardEmoji, BridgeJob, Discussion, Job, MergeRequest, MergeabilityCheck, MrActivityFilter,
+    MrApprovals, MrFilter, MrListCounts, MrPermissions, MrSortField, Pipeline, PipelineTestSummary,
+    RawDiff, RepoCommit, SortDir, User,
 };
 use crate::nav::Screen;
 
@@ -70,6 +73,11 @@ pub struct MergeRequestsView {
     pub(crate) approvals: Option<MrApprovals>,
     pub(crate) approvals_expanded: bool,
     pub(crate) merge_details_expanded: bool,
+    pub(crate) mergeability_checks: Vec<MergeabilityCheck>,
+    pub(crate) test_summary: Option<PipelineTestSummary>,
+    pub(crate) test_summary_expanded: bool,
+    pub(crate) edit_commit_msg: bool,
+    pub(crate) commit_msg_input: Entity<TextareaState>,
     pub(crate) remove_source_branch: bool,
     pub(crate) squash_commits: bool,
     pub(crate) commits: Vec<RepoCommit>,
@@ -79,6 +87,7 @@ pub struct MergeRequestsView {
     pub(crate) cached_stages: Vec<&'static str>,
     pub(crate) cached_activity: Vec<ActivityEntry>,
     pub(crate) overview_list: ListState,
+    pub(crate) open_thread_cursor: usize,
     pub(crate) participants: Vec<User>,
     pub(crate) project_members: Vec<User>,
     pub(crate) members_loading: bool,
@@ -97,13 +106,15 @@ pub struct MergeRequestsView {
     pub(crate) discussions_error: Option<String>,
     pub(crate) inline_target: Option<DiffLinePosition>,
     pub(crate) replying_to: Option<String>,
-    pub(crate) comment_input: Entity<InputState>,
+    pub(crate) comment_preview: bool,
+    pub(crate) comment_input: Entity<TextareaState>,
     pub(crate) reply_input: Entity<InputState>,
     pub(crate) inline_input: Entity<InputState>,
     pub(crate) list_task: Option<Task<()>>,
     pub(crate) counts_task: Option<Task<()>>,
     pub(crate) pipelines_hydrate_task: Option<Task<()>>,
     pub(crate) detail_task: Option<Task<()>>,
+    pub(crate) recheck_task: Option<Task<()>>,
     pub(crate) members_task: Option<Task<()>>,
     pub(crate) mutation_task: Option<Task<()>>,
     _subs: Vec<Subscription>,
@@ -114,8 +125,9 @@ impl MergeRequestsView {
         let mode = if state.read(cx).prefs.default_diff_split { DiffMode::Split } else { DiffMode::Unified };
         let diff_state = cx.new(|cx| new_diff_state(Vec::new(), mode, cx));
         let search_input = cx.new(|cx| InputState::new(window, cx).placeholder("Search or filter results..."));
-        let comment_input = cx.new(|cx| InputState::new(window, cx).placeholder("Write a comment…"));
-        let reply_input = cx.new(|cx| InputState::new(window, cx).placeholder("Reply to thread…"));
+        let comment_input = cx.new(|cx| TextareaState::new(window, cx).placeholder("Write a comment or drag your files here…"));
+        let commit_msg_input = cx.new(|cx| TextareaState::new(window, cx).placeholder("Custom merge/squash commit message…"));
+        let reply_input = cx.new(|cx| InputState::new(window, cx).placeholder("Reply…"));
         let inline_input = cx.new(|cx| InputState::new(window, cx).placeholder("Add inline review comment…"));
         let member_filter_input = cx.new(|cx| InputState::new(window, cx).placeholder("Search users…"));
         let sub_member = cx.subscribe_in(&member_filter_input, window, |_, _, ev: &InputEvent, _, cx| {
@@ -164,19 +176,21 @@ impl MergeRequestsView {
             page: 1, per_page: 20, next_page: None, counts: MrListCounts::default(),
             search_input, search_history: Vec::new(), mrs: Vec::new(), list_loading: false,
             selected: None, pending_iid: None, active_tab: 0, approvals: None,
-            approvals_expanded: false, merge_details_expanded: true, remove_source_branch: false,
-            squash_commits: false, commits: Vec::new(), mr_pipelines: Vec::new(),
-            head_pipeline_jobs: Vec::new(), head_pipeline_bridges: Vec::new(),
+            approvals_expanded: false, merge_details_expanded: true, mergeability_checks: Vec::new(),
+            test_summary: None, test_summary_expanded: false, edit_commit_msg: false, commit_msg_input,
+            remove_source_branch: false, squash_commits: false, commits: Vec::new(),
+            mr_pipelines: Vec::new(), head_pipeline_jobs: Vec::new(), head_pipeline_bridges: Vec::new(),
             cached_stages: Vec::new(), cached_activity: Vec::new(),
-            overview_list: ListState::new(4, ListAlignment::Top, px(240.)),
+            overview_list: ListState::new(4, ListAlignment::Top, px(240.)), open_thread_cursor: 0,
             participants: Vec::new(), project_members: Vec::new(), members_loading: false,
             members_loaded: false, member_picker: None, member_filter_input, award_emojis: Vec::new(),
             todo_added: false, activity_filter: MrActivityFilter::All, activity_desc: false,
             raw_diffs: Vec::new(), fallback_notices: Vec::new(), has_truncated: false,
-            diff_state, discussions: Vec::new(), discussions_error: None,
-            inline_target: None, replying_to: None, comment_input, reply_input, inline_input,
-            list_task: None, counts_task: None, pipelines_hydrate_task: None, detail_task: None, members_task: None,
-            mutation_task: None, _subs: vec![sub_search, sub_member, sub],
+            diff_state, discussions: Vec::new(), discussions_error: None, inline_target: None,
+            replying_to: None, comment_preview: false, comment_input, reply_input, inline_input,
+            list_task: None, counts_task: None, pipelines_hydrate_task: None, detail_task: None,
+            recheck_task: None, members_task: None, mutation_task: None,
+            _subs: vec![sub_search, sub_member, sub],
         }
     }
 

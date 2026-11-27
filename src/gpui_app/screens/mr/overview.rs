@@ -1,7 +1,6 @@
 use gpui_kit::{
     component::{
-        button::{Button, ButtonVariants as _},
-        input::Input,
+        button::Button,
         menu::{DropdownMenu as _, PopupMenuItem},
         ActiveTheme as _, Icon, IconName, Sizable as _,
     },
@@ -13,6 +12,7 @@ use crate::gitlab::{GitLab, MergeRequest, Project};
 
 use super::super::super::markdown::{render_markdown_with_uploads, MarkdownProjectContext};
 use super::activity::{render_activity_entry, render_activity_header};
+use super::composer::render_comment_composer;
 use super::sidebar::render_mr_metadata_sidebar;
 use super::widgets::render_mr_widgets;
 use super::MergeRequestsView;
@@ -102,33 +102,6 @@ fn render_desc_and_reactions(
         .child(reactions_bar)
 }
 
-fn render_comment_composer(
-    view: &MergeRequestsView,
-    mr: &MergeRequest,
-    cx: &mut Context<MergeRequestsView>,
-) -> impl IntoElement + use<> {
-    if !view.mr_permissions(mr, cx).can_comment {
-        return div().w_full().pb_4().into_any_element();
-    }
-    let theme = cx.theme();
-    div()
-        .id("mr-comment-composer")
-        .w_full().pt_2().pb_6()
-        .child(
-            div().w_full().p_3().rounded_md().border_1().border_color(theme.border).bg(theme.list_head)
-                .flex().flex_col().gap_2()
-                .child(Input::new(&view.comment_input))
-                .child(
-                    div().flex().items_center().justify_end().child(
-                        Button::new("mr-new-comment").primary().small().label("Comment")
-                            .on_click(cx.listener(|this, _, window, cx| this.submit_mr_comment(window, cx))),
-                    ),
-                ),
-        )
-        .test_support()
-        .into_any_element()
-}
-
 pub fn render_mr_overview(
     view: &MergeRequestsView,
     mr: &MergeRequest,
@@ -155,7 +128,7 @@ pub fn render_mr_overview(
                     let entry = this.cached_activity[i - 3].clone();
                     render_activity_entry(this, &entry, &mr_owned, &web_origin, &md_ctx, client_owned.as_ref(), cx)
                 }
-                _ => render_comment_composer(this, &mr_owned, cx).into_any_element(),
+                _ => render_comment_composer(this, &mr_owned, &md_ctx, cx).into_any_element(),
             }
         }),
     )

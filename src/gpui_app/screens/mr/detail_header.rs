@@ -11,7 +11,7 @@ use gpui_kit::{
 };
 
 use crate::gitlab::time_util::format_relative;
-use crate::gitlab::MergeRequest;
+use crate::gitlab::{mr_can_review, MergeRequest};
 
 use super::super::super::safe_url::safe_open_url;
 use super::MergeRequestsView;
@@ -38,51 +38,44 @@ pub fn render_mr_detail_header(
     let dark = theme.is_dark();
     let perms = view.mr_permissions(mr, cx);
     let (pill_bg, pill_fg, state_label) = mr_state_pill(mr, dark);
-    let author = mr.author.as_ref().map(|a| a.username.clone()).unwrap_or_else(|| "unknown".into());
+    let author = mr.author.as_ref()
+        .map(|a| if a.name.trim().is_empty() { a.username.clone() } else { a.name.clone() })
+        .unwrap_or_else(|| "unknown".into());
     let created_rel = mr.created_at.as_deref().map(format_relative).unwrap_or_default();
 
-    let src = mr.source_branch.clone();
-    let src_copy = src.clone();
-    let src_checkout = src.clone();
-    let web_url = mr.web_url.clone();
-    let web_copy = web_url.clone();
+    let (src, src_copy, src_checkout) = (mr.source_branch.clone(), mr.source_branch.clone(), mr.source_branch.clone());
+    let (web_url, web_copy, web_more) = (mr.web_url.clone(), mr.web_url.clone(), mr.web_url.clone());
     let web_patch = format!("{}.patch", web_url.trim_end_matches('/'));
-    let web_more = web_url.clone();
     let mr_ref = format!("!{}", mr.iid);
-    let state_for_copy = view.state.clone();
-    let state_for_code = view.state.clone();
-    let weak_more = cx.entity().downgrade();
+    let (state_for_copy, state_for_code) = (view.state.clone(), view.state.clone());
+    let (weak_more, weak_rev) = (cx.entity().downgrade(), cx.entity().downgrade());
 
     let src_bg: gpui_kit::Hsla = if dark { rgb(0x1F3550).into() } else { rgb(0xE9F3FC).into() };
     let active_tab_border: gpui_kit::Hsla = if dark { rgb(0x63A6E9).into() } else { theme.primary };
     let badge_bg: gpui_kit::Hsla = if dark { rgb(0xBFBFBF).into() } else { theme.secondary };
     let badge_fg: gpui_kit::Hsla = if dark { rgb(0x18171D).into() } else { theme.foreground };
+    let thread_bg: gpui_kit::Hsla = if dark { rgb(0x473318).into() } else { rgb(0xFDF1DD).into() };
+    let thread_bd: gpui_kit::Hsla = if dark { rgb(0x8A5D1E).into() } else { rgb(0xE0B15C).into() };
+    let thread_fg: gpui_kit::Hsla = if dark { rgb(0xF6D399).into() } else { rgb(0x7A4400).into() };
+    let cta_bg: gpui_kit::Hsla = if dark { rgb(0x63A6E9).into() } else { theme.primary };
+    let cta_fg: gpui_kit::Hsla = if dark { rgb(0x18171D).into() } else { theme.primary_foreground };
 
-    let non_sys_notes: usize = view
-        .discussions
-        .iter()
-        .map(|d| d.notes.iter().filter(|n| !n.system).count())
-        .sum();
+    let non_sys_notes: usize = view.discussions.iter().map(|d| d.notes.iter().filter(|n| !n.system).count()).sum();
+    let open_threads = view.unresolved_thread_indices().len();
+    let changes_count = view.raw_diffs.len();
     let tabs_meta = [
-        ("Overview", non_sys_notes),
-        ("Commits", view.commits.len()),
-        ("Pipelines", view.mr_pipelines.len()),
-        ("Changes", view.raw_diffs.len()),
+        ("Overview", non_sys_notes), ("Commits", view.commits.len()),
+        ("Pipelines", view.mr_pipelines.len()), ("Changes", changes_count),
     ];
 
     let title_row = div()
         .flex().items_start().justify_between().gap_4()
-        .child(
-            div().id("mr-detail-title").flex_1().min_w_0()
-                .text_2xl().font_bold().text_color(theme.foreground)
-                .child(mr.title.clone()).test_support(),
-        )
+        .child(div().id("mr-detail-title").flex_1().min_w_0().text_2xl().font_bold().text_color(theme.foreground).child(mr.title.clone()).test_support())
         .child(
             div().flex().items_center().gap_1p5().flex_shrink_0()
                 .children(perms.can_edit.then(|| {
                     div().id("mr-edit-btn").px_3().py_1().rounded_md().cursor_pointer()
-                        .bg(theme.secondary).border_1().border_color(theme.border)
-                        .hover(|s| s.bg(theme.secondary_hover))
+                        .bg(theme.secondary).border_1().border_color(theme.border).hover(|s| s.bg(theme.secondary_hover))
                         .text_xs().text_color(theme.foreground)
                         .on_click(cx.listener(|this, _, window, cx| this.open_edit_mr_dialog(window, cx)))
                         .child("Edit").test_support()
@@ -90,26 +83,18 @@ pub fn render_mr_detail_header(
                 .child(
                     Button::new("mr-code-menu").outline().small().label("Code ▾")
                         .dropdown_menu(move |menu, _, _| {
-                            let b1 = src_copy.clone();
-                            let b2 = src_checkout.clone();
-                            let u1 = web_copy.clone();
-                            let u2 = web_url.clone();
-                            let u3 = web_patch.clone();
-                            let st1 = state_for_code.clone();
-                            let st2 = state_for_code.clone();
+                            let (b1, b2, u1, u2, u3) = (src_copy.clone(), src_checkout.clone(), web_copy.clone(), web_url.clone(), web_patch.clone());
+                            let (st1, st2) = (state_for_code.clone(), state_for_code.clone());
                             menu.item(PopupMenuItem::new("Copy branch name").on_click(move |_, _, cx| {
                                 cx.write_to_clipboard(ClipboardItem::new_string(b1.clone()));
                                 st1.update(cx, |s, cx| s.set_status("Copied source branch name", cx));
                             }))
                             .item(PopupMenuItem::new("Copy git checkout command").on_click(move |_, _, cx| {
-                                let cmd = format!("git fetch origin && git checkout -b '{b2}' 'origin/{b2}'");
-                                cx.write_to_clipboard(ClipboardItem::new_string(cmd));
+                                cx.write_to_clipboard(ClipboardItem::new_string(format!("git fetch origin && git checkout -b '{b2}' 'origin/{b2}'")));
                                 st2.update(cx, |s, cx| s.set_status("Copied checkout command", cx));
                             }))
                             .separator()
-                            .item(PopupMenuItem::new("Copy merge request URL").on_click(move |_, _, cx| {
-                                cx.write_to_clipboard(ClipboardItem::new_string(u1.clone()));
-                            }))
+                            .item(PopupMenuItem::new("Copy merge request URL").on_click(move |_, _, cx| cx.write_to_clipboard(ClipboardItem::new_string(u1.clone()))))
                             .item(PopupMenuItem::new("Open plain patch in browser").on_click(move |_, _, _| { let _ = safe_open_url(&u3); }))
                             .item(PopupMenuItem::new("Open in GitLab Web").on_click(move |_, _, _| { let _ = safe_open_url(&u2); }))
                         }),
@@ -117,18 +102,11 @@ pub fn render_mr_detail_header(
                 .child(
                     Button::new("mr-detail-more").ghost().small().icon(Icon::new(IconName::EllipsisVertical).size_3p5())
                         .dropdown_menu(move |mut menu, _, _| {
-                            let r = mr_ref.clone();
-                            let w_ref = weak_more.clone();
-                            let w_mut = weak_more.clone();
-                            let u = web_more.clone();
+                            let (r, w_ref, w_mut, u) = (mr_ref.clone(), weak_more.clone(), weak_more.clone(), web_more.clone());
                             menu = menu
-                                .item(PopupMenuItem::new(format!("Copy reference ({r})")).on_click(move |_, _, cx| {
-                                    cx.write_to_clipboard(ClipboardItem::new_string(r.clone()));
-                                }))
+                                .item(PopupMenuItem::new(format!("Copy reference ({r})")).on_click(move |_, _, cx| cx.write_to_clipboard(ClipboardItem::new_string(r.clone()))))
                                 .item(PopupMenuItem::new("Refresh merge request").on_click(move |_, _, cx| {
-                                    let _ = w_ref.update(cx, |v, cx| {
-                                        if let Some(m) = v.selected.clone() { v.select_mr(m, false, cx); }
-                                    });
+                                    let _ = w_ref.update(cx, |v, cx| { if let Some(m) = v.selected.clone() { v.select_mr(m, false, cx); } });
                                 }))
                                 .item(PopupMenuItem::new("Open in GitLab Web").on_click(move |_, _, _| { let _ = safe_open_url(&u); }));
                             if perms.can_close {
@@ -146,7 +124,7 @@ pub fn render_mr_detail_header(
         );
 
     let meta_row = div()
-        .mt_2().flex().items_center().flex_wrap().gap_1p5().text_xs()
+        .mt_1p5().flex().items_center().flex_wrap().gap_1p5().text_xs()
         .child(
             div().px_2().py(px(2.)).rounded_full().bg(pill_bg).text_color(pill_fg)
                 .flex().items_center().gap_1().font_semibold()
@@ -155,10 +133,7 @@ pub fn render_mr_detail_header(
         )
         .child(div().font_semibold().text_color(theme.foreground).child(author))
         .child(div().text_color(theme.muted_foreground).child("requested to merge"))
-        .child(
-            div().px_1p5().py(px(1.)).rounded_sm().bg(src_bg).text_color(theme.link)
-                .font_family(theme.mono_font_family.clone()).max_w(px(260.)).truncate().child(src.clone()),
-        )
+        .child(div().px_1p5().py(px(1.)).rounded_sm().bg(src_bg).text_color(theme.link).font_family(theme.mono_font_family.clone()).max_w(px(260.)).truncate().child(src.clone()))
         .child(
             Button::new("mr-copy-src-branch").ghost().xsmall().icon(Icon::new(IconName::Copy).size_3())
                 .on_click(move |_, _, cx| {
@@ -167,14 +142,58 @@ pub fn render_mr_detail_header(
                 }),
         )
         .child(div().text_color(theme.muted_foreground).child("into"))
-        .child(
-            div().px_1p5().py(px(1.)).rounded_sm().bg(theme.secondary).text_color(theme.link)
-                .font_family(theme.mono_font_family.clone()).child(mr.target_branch.clone()),
-        )
+        .child(div().px_1p5().py(px(1.)).rounded_sm().bg(theme.secondary).text_color(theme.link).font_family(theme.mono_font_family.clone()).child(mr.target_branch.clone()))
         .children((!created_rel.is_empty()).then(|| div().text_color(theme.muted_foreground).child(created_rel)));
 
+    let open_threads_pill = (open_threads > 0).then(|| {
+        let lbl = if open_threads == 1 { "1 open thread".into() } else { format!("{open_threads} open threads") };
+        div()
+            .id("mr-open-threads-nav").rounded_md().bg(thread_bg).border_1().border_color(thread_bd)
+            .flex().items_center().text_xs().text_color(thread_fg)
+            .child(div().id("mr-open-threads-jump").px_2().py_1().cursor_pointer().font_medium()
+                .on_click(cx.listener(|this, _, _, cx| this.jump_to_open_thread(0, cx))).child(lbl))
+            .child(div().id("mr-open-threads-prev").px_1p5().py_1().border_l_1().border_color(thread_bd).cursor_pointer()
+                .on_click(cx.listener(|this, _, _, cx| this.jump_to_open_thread(-1, cx)))
+                .child(Icon::new(IconName::ChevronUp).size_3().text_color(thread_fg)))
+            .child(div().id("mr-open-threads-next").px_1p5().py_1().border_l_1().border_color(thread_bd).cursor_pointer()
+                .on_click(cx.listener(|this, _, _, cx| this.jump_to_open_thread(1, cx)))
+                .child(Icon::new(IconName::ChevronDown).size_3().text_color(thread_fg)))
+            .test_support()
+    });
+
+    let show_review_cta = mr_can_review(&mr.state) && (perms.can_approve || perms.can_unapprove || perms.can_comment);
+    let review_btn = show_review_cta.then(|| {
+        div()
+            .id("mr-your-review-btn")
+            .child(
+                Button::new("mr-your-review-menu").primary().small().label("Your review")
+                    .bg(cta_bg).text_color(cta_fg)
+                    .dropdown_menu(move |mut menu, _, _| {
+                        let (w_app, w_cmt, w_chg) = (weak_rev.clone(), weak_rev.clone(), weak_rev.clone());
+                        if perms.can_approve {
+                            menu = menu.item(PopupMenuItem::new("Approve merge request").on_click(move |_, w, cx| {
+                                let _ = w_app.update(cx, |v, cx| v.perform_mr_mutation("approve", Some(w), cx));
+                            }));
+                        } else if perms.can_unapprove {
+                            menu = menu.item(PopupMenuItem::new("Revoke approval").on_click(move |_, w, cx| {
+                                let _ = w_app.update(cx, |v, cx| v.perform_mr_mutation("unapprove", Some(w), cx));
+                            }));
+                        }
+                        if perms.can_comment {
+                            menu = menu.item(PopupMenuItem::new("Add comment").on_click(move |_, _, cx| {
+                                let _ = w_cmt.update(cx, |v, cx| v.jump_to_comment_composer(cx));
+                            }));
+                        }
+                        menu.item(PopupMenuItem::new(format!("View changes ({changes_count})")).on_click(move |_, _, cx| {
+                            let _ = w_chg.update(cx, |v, cx| { v.active_tab = 3; cx.notify(); });
+                        }))
+                    }),
+            )
+            .test_support()
+    });
+
     let tabs_row = div()
-        .mt_4().border_b_1().border_color(theme.border)
+        .mt_3().border_b_1().border_color(theme.border)
         .flex().items_end().justify_between().gap_4()
         .child(div().flex().items_center().gap_1().children(tabs_meta.into_iter().enumerate().map(|(ix, (lbl, cnt))| {
             let active = view.active_tab == ix;
@@ -190,19 +209,22 @@ pub fn render_mr_detail_header(
                 .child(div().px_1p5().py(px(1.)).rounded_full().bg(badge_bg).text_color(badge_fg).text_xs().font_semibold().child(cnt.to_string()))
                 .test_support()
         })))
-        .children(perms.can_todo.then(|| {
-            div().pb_1p5().child(
-                div().id("mr-add-todo").px_3().py_1().rounded_md().cursor_pointer()
-                    .bg(theme.secondary).border_1().border_color(theme.border)
-                    .hover(|s| s.bg(theme.secondary_hover))
-                    .text_xs().text_color(theme.foreground)
-                    .on_click(cx.listener(|this, _, _, cx| this.add_mr_todo(cx)))
-                    .child(if view.todo_added { "To-do added ✓" } else { "Add a to-do item" })
-                    .test_support(),
-            )
-        }));
+        .child(
+            div().id("mr-tabs-right").pb_1p5().flex().items_center().gap_2().flex_shrink_0()
+                .children(open_threads_pill)
+                .children(perms.can_todo.then(|| {
+                    div().id("mr-add-todo").px_3().py_1().rounded_md().cursor_pointer()
+                        .bg(theme.secondary).border_1().border_color(theme.border).hover(|s| s.bg(theme.secondary_hover))
+                        .text_xs().text_color(theme.foreground)
+                        .on_click(cx.listener(|this, _, _, cx| this.add_mr_todo(cx)))
+                        .child(if view.todo_added { "Mark as done" } else { "Add a to-do item" })
+                        .test_support()
+                }))
+                .children(review_btn)
+                .test_support(),
+        );
 
     div()
-        .w_full().px_6().pt_4().flex().flex_col().items_center()
+        .w_full().px_6().pt_3().flex().flex_col().items_center()
         .child(div().w_full().max_w(px(1120.)).flex().flex_col().child(title_row).child(meta_row).child(tabs_row))
 }

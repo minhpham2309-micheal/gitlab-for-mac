@@ -1,7 +1,10 @@
+use std::time::Duration;
+
 use gpui_kit::Context;
 
 use crate::gitlab::{
-    AwardEmoji, Discussion, Job, MergeRequest, MrApprovals, MrListCounts, Pipeline, RawDiff,
+    mr_merge_status_pending, AwardEmoji, Discussion, Job, MergeRequest, MergeabilityCheck,
+    MrApprovals, MrListCounts, MrMergeabilitySnapshot, Pipeline, PipelineTestSummary, RawDiff,
     RepoCommit, User,
 };
 use crate::runtime::spawn_tokio;
@@ -9,6 +12,20 @@ use crate::runtime::spawn_tokio;
 use super::super::super::diff_hl::parse_raw_diffs_individually;
 use super::cache::{build_activity_entries, compute_stage_statuses};
 use super::MergeRequestsView;
+
+const MAX_MERGEABILITY_RECHECKS: usize = 4;
+const MERGEABILITY_RECHECK_DELAY: Duration = Duration::from_millis(1500);
+
+pub(crate) fn apply_mergeability_snapshot(
+    mr: &mut MergeRequest,
+    snap: Option<MrMergeabilitySnapshot>,
+) -> Vec<MergeabilityCheck> {
+    let Some(s) = snap else { return Vec::new(); };
+    if s.conflicts == Some(true) {
+        mr.has_conflicts = Some(true);
+    }
+    s.checks
+}
 
 impl MergeRequestsView {
     pub(crate) fn rebuild_activity_cache(&mut self) {
@@ -20,6 +37,7 @@ impl MergeRequestsView {
         self.cached_stages = compute_stage_statuses(&self.head_pipeline_jobs, &self.head_pipeline_bridges);
         self.overview_list.remeasure_items(1..2);
     }
+
     pub fn open_mr_by_iid(&mut self, iid: u64, cx: &mut Context<Self>) {
         if let Some(found) = self.mrs.iter().find(|m| m.iid == iid).cloned() {
             self.select_mr(found, false, cx);
@@ -65,8 +83,9 @@ impl MergeRequestsView {
         let (h_ep, p_ep) = (st.host_epoch, st.project_epoch);
         self.detail_task = Some(cx.spawn(async move |this, cx| {
             let res = spawn_tokio(async move {
-                let (detail, diffs, discussions, approvals, commits, pipelines, participants, awards) = tokio::join!(
+                let (detail, checks_snap, diffs, discussions, approvals, commits, pipelines, participants, awards) = tokio::join!(
                     client.merge_request_detail(project.id, iid),
+                    client.mr_mergeability_checks(&project.path_with_namespace, iid),
                     client.merge_request_diffs(project.id, iid),
                     client.mr_discussions(project.id, iid),
                     client.mr_approvals(project.id, iid),
@@ -77,32 +96,36 @@ impl MergeRequestsView {
                 );
                 let head_pid = detail.as_ref().ok().and_then(|m| m.head_pipeline.as_ref().map(|p| p.id))
                     .or_else(|| pipelines.as_ref().ok().and_then(|ps| ps.first().map(|p| p.id)));
-                let (jobs, bridges) = match head_pid {
+                let (jobs, bridges, test_summary) = match head_pid {
                     Some(pid) => {
-                        let (j, b) = tokio::join!(
+                        let (j, b, ts) = tokio::join!(
                             client.pipeline_jobs_all(project.id, pid),
                             client.pipeline_bridges(project.id, pid),
+                            client.pipeline_test_report_summary(project.id, pid),
                         );
-                        (j.unwrap_or_default(), b.unwrap_or_default())
+                        (j.unwrap_or_default(), b.unwrap_or_default(), ts.ok().flatten())
                     }
-                    None => (Vec::new(), Vec::new()),
+                    None => (Vec::new(), Vec::new(), None),
                 };
                 (
-                    detail.map_err(|e| e.to_string()), diffs.map_err(|e| e.to_string()),
+                    detail.map_err(|e| e.to_string()), checks_snap, diffs.map_err(|e| e.to_string()),
                     discussions.map_err(|e| e.to_string()), approvals.ok().flatten(),
                     commits.unwrap_or_default(), pipelines.unwrap_or_default(),
                     participants.unwrap_or_default(), awards.unwrap_or_default(),
-                    jobs, bridges,
+                    jobs, bridges, test_summary,
                 )
             }).await;
             let _ = this.update(cx, |view, cx| {
                 let cur = view.state.read(cx);
                 let still_sel = view.selected.as_ref().is_some_and(|m| m.iid == iid);
                 if cur.host_epoch != h_ep || cur.project_epoch != p_ep || !still_sel { return; }
-                if let Ok((detail_res, diffs_res, disc_res, appr, commits, pipes, parts, awards, jobs, bridges)) = res {
-                    if let Ok(full_mr) = detail_res {
+                if let Ok((detail_res, checks_snap, diffs_res, disc_res, appr, commits, pipes, parts, awards, jobs, bridges, test_summary)) = res {
+                    let mut should_recheck = false;
+                    if let Ok(mut full_mr) = detail_res {
                         view.remove_source_branch = full_mr.force_remove_source_branch.or(full_mr.should_remove_source_branch).unwrap_or(false);
                         view.squash_commits = full_mr.squash.unwrap_or(false);
+                        view.mergeability_checks = apply_mergeability_snapshot(&mut full_mr, checks_snap);
+                        should_recheck = mr_merge_status_pending(&full_mr, &view.mergeability_checks);
                         let latest_pipe = full_mr.head_pipeline.clone().or_else(|| pipes.first().cloned());
                         if let Some(hp) = latest_pipe
                             && let Some(row) = view.mrs.iter_mut().find(|m| m.iid == iid)
@@ -132,12 +155,53 @@ impl MergeRequestsView {
                     view.award_emojis = awards;
                     view.head_pipeline_jobs = jobs;
                     view.head_pipeline_bridges = bridges;
+                    view.test_summary = test_summary;
                     view.rebuild_stage_cache();
                     view.rebuild_activity_cache();
                     view.sync_summary(cx);
+                    if should_recheck {
+                        view.schedule_mergeability_recheck(iid, cx);
+                    }
                 }
                 cx.notify();
             });
+        }));
+    }
+
+    pub(crate) fn schedule_mergeability_recheck(&mut self, iid: u64, cx: &mut Context<Self>) {
+        let st = self.state.read(cx);
+        if st.offline_mode { return; }
+        let (Some(client), Some(project)) = (st.gitlab.clone(), st.project.clone()) else { return; };
+        let (h_ep, p_ep) = (st.host_epoch, st.project_epoch);
+        self.recheck_task = Some(cx.spawn(async move |this, cx| {
+            for _ in 0..MAX_MERGEABILITY_RECHECKS {
+                let c = client.clone();
+                let proj_path = project.path_with_namespace.clone();
+                let res = spawn_tokio(async move {
+                    tokio::time::sleep(MERGEABILITY_RECHECK_DELAY).await;
+                    let (detail, snap) = tokio::join!(
+                        c.merge_request_detail(project.id, iid),
+                        c.mr_mergeability_checks(&proj_path, iid),
+                    );
+                    (detail.ok(), snap)
+                }).await;
+                let mut done = true;
+                let _ = this.update(cx, |view, cx| {
+                    let cur = view.state.read(cx);
+                    if cur.host_epoch != h_ep || cur.project_epoch != p_ep || view.selected.as_ref().map(|m| m.iid) != Some(iid) {
+                        return;
+                    }
+                    if let Ok((Some(mut fresh), snap)) = res {
+                        view.mergeability_checks = apply_mergeability_snapshot(&mut fresh, snap);
+                        done = !mr_merge_status_pending(&fresh, &view.mergeability_checks);
+                        view.selected = Some(fresh);
+                        view.overview_list.remeasure_items(1..2);
+                        view.sync_summary(cx);
+                        cx.notify();
+                    }
+                });
+                if done { break; }
+            }
         }));
     }
 
@@ -164,6 +228,18 @@ impl MergeRequestsView {
         self.rebuild_stage_cache();
         self.rebuild_activity_cache();
         self.sync_summary(cx);
+        cx.notify();
+    }
+
+    pub fn set_fixture_test_summary(&mut self, summary: Option<PipelineTestSummary>, cx: &mut Context<Self>) {
+        self.test_summary = summary;
+        self.overview_list.remeasure_items(1..2);
+        cx.notify();
+    }
+
+    pub fn set_fixture_mergeability_checks(&mut self, checks: Vec<MergeabilityCheck>, cx: &mut Context<Self>) {
+        self.mergeability_checks = checks;
+        self.overview_list.remeasure_items(1..2);
         cx.notify();
     }
 }

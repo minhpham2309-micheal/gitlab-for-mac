@@ -5,8 +5,8 @@ use reqwest::Method;
 use tokio::sync::Semaphore;
 
 use super::client::GitLab;
-use super::error::Result;
-use super::types::{Branch, BridgeJob, Job, Pipeline};
+use super::error::{GitLabError, Result};
+use super::types::{Branch, BridgeJob, Job, Pipeline, PipelineTestSummary};
 
 const MAX_MR_PIPELINE_FALLBACKS: usize = 25;
 const MR_PIPELINE_CONCURRENCY: usize = 6;
@@ -70,6 +70,19 @@ impl GitLab {
         match self.send_paginated(&path, 5).await {
             Ok(items) => Ok(items),
             Err(_) => Ok(Vec::new()),
+        }
+    }
+
+    pub async fn pipeline_test_report_summary(
+        &self,
+        project_id: u64,
+        pipeline_id: u64,
+    ) -> Result<Option<PipelineTestSummary>> {
+        let path = format!("/projects/{project_id}/pipelines/{pipeline_id}/test_report_summary");
+        match self.send::<PipelineTestSummary>(Method::GET, &path).await {
+            Ok(summary) if summary.total.count > 0 => Ok(Some(summary)),
+            Ok(_) | Err(GitLabError::Http { status: 403 | 404, .. }) => Ok(None),
+            Err(err) => Err(err),
         }
     }
 

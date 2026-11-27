@@ -6,7 +6,6 @@ use gpui_kit::{
 };
 
 use crate::nav::{Screen, SidebarSection};
-use crate::text_util::ellipsis;
 
 use super::avatar::render_avatar;
 use super::safe_url::safe_open_url;
@@ -66,7 +65,7 @@ pub fn render_project_card(state: &Entity<AppState>, collapsed: bool, cx: &mut A
         })
         .child(av)
         .when(!collapsed, |el| {
-            el.child(div().flex_1().min_w_0().text_xs().truncate().child(ellipsis(&name, 26)))
+            el.child(div().flex_1().min_w_0().text_xs().line_clamp(2).child(name))
         })
         .test_support();
 

@@ -86,10 +86,15 @@ pub fn render_mr_metadata_sidebar(
             let approved = approved_ids.contains(&u.id);
             let theme = cx.theme();
             let ok = status_color("success", theme.is_dark());
+            let status_el = if approved {
+                Icon::new(IconName::CircleCheck).size_3p5().text_color(ok).into_any_element()
+            } else {
+                Icon::empty().path("icons/glab-status-pending.svg").size_3p5().text_color(theme.muted_foreground).into_any_element()
+            };
             div().flex().items_center().justify_between().gap_2()
                 .child(div().flex().items_center().gap_2().min_w_0().child(av)
                     .child(div().text_xs().text_color(theme.foreground).truncate().child(u.name.clone())))
-                .children(approved.then(|| Icon::new(IconName::CircleCheck).size_3p5().text_color(ok)))
+                .child(status_el)
         })
         .collect();
 
