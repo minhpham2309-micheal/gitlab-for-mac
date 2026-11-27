@@ -10,17 +10,17 @@ use tokio::net::TcpListener;
 
 use gitlab_for_mac::updater::client::{check_for_update, download_and_verify};
 use gitlab_for_mac::updater::install::{
-    detect_install_target_from_exe, parse_codesign_team_id, resolve_app_bundle_from_exe,
+    detect_install_target_from_exe_with_apps, parse_codesign_team_id, resolve_app_bundle_from_exe,
 };
 use gitlab_for_mac::updater::manifest::{
     clean_release_notes, format_bytes, is_allowed_download_url, parse_sha256_manifest,
 };
 use gitlab_for_mac::updater::version::{
-    evaluate_release, extract_canary_id, is_newer_stable, select_release_assets, GitHubAsset,
-    GitHubRelease,
+    evaluate_release, evaluate_release_with_sha, extract_canary_id, is_newer_stable,
+    is_same_canary_build, select_release_assets, GitHubAsset, GitHubRelease,
 };
 use gitlab_for_mac::updater::{
-    InstallBlocker, InstallTarget, UpdateChannel, UpdateCheckResult, UpdateConfig,
+    InstallBlocker, InstallTarget, UpdateChannel, UpdateCheckResult, UpdateConfig, BUILD_SHORT_SHA,
 };
 
 fn sample_release(tag: &str, prerelease: bool, draft: bool) -> GitHubRelease {
@@ -96,12 +96,18 @@ fn canary_evaluation_detects_new_commit_and_skips_installed() {
     canary.body = Some("## Rolling Canary Build (`0.1.0-canary.1212d63`)\nChanges".into());
 
     assert_eq!(extract_canary_id(&canary).as_deref(), Some("canary-1212d63"));
-    let info = evaluate_release(&canary, UpdateChannel::Canary, "0.1.0", "arm64", None).unwrap();
+    let info = evaluate_release_with_sha(&canary, UpdateChannel::Canary, "0.1.0", "arm64", None, Some("9999aaa")).unwrap();
     assert_eq!(info.canary_id.as_deref(), Some("canary-1212d63"));
     assert_eq!(info.version, "0.1.0-canary.1212d63");
 
-    // Once installed, the same canary ID is treated as up to date.
-    assert!(evaluate_release(&canary, UpdateChannel::Canary, "0.1.0", "arm64", Some("canary-1212d63")).is_none());
+    // Matching compiled build SHA treats the current canary as up to date even on first launch.
+    assert!(BUILD_SHORT_SHA.is_some_and(|s| s.len() == 7));
+    assert!(is_same_canary_build("canary-1212d63", None, Some("1212d63")));
+    assert!(is_same_canary_build("canary-1212d63", None, Some("1212D63")));
+    assert!(evaluate_release_with_sha(&canary, UpdateChannel::Canary, "0.1.0", "arm64", None, Some("1212d63")).is_none());
+
+    // Once installed via updater, the same canary ID is also treated as up to date.
+    assert!(evaluate_release_with_sha(&canary, UpdateChannel::Canary, "0.1.0", "arm64", Some("canary-1212d63"), None).is_none());
 }
 
 #[test]
@@ -145,29 +151,50 @@ fn install_target_and_codesign_team_detection() {
         Some(PathBuf::from("/Applications/GitLab for Mac.app"))
     );
     assert!(resolve_app_bundle_from_exe(Path::new("/opt/build/target/debug/gitlab-for-mac")).is_none());
+
+    // When no Applications folder is writable, blockers are preserved.
+    let no_apps: Vec<PathBuf> = Vec::new();
     assert_eq!(
-        detect_install_target_from_exe(Path::new("/opt/build/target/debug/gitlab-for-mac")),
+        detect_install_target_from_exe_with_apps(Path::new("/opt/build/target/debug/gitlab-for-mac"), &no_apps),
         InstallTarget::Blocked(InstallBlocker::NotAnAppBundle)
     );
     assert_eq!(
-        detect_install_target_from_exe(Path::new(
-            "/private/var/folders/aa/bb/T/AppTranslocation/UUID/d/GitLab for Mac.app/Contents/MacOS/gitlab-for-mac"
-        )),
+        detect_install_target_from_exe_with_apps(
+            Path::new("/private/var/folders/aa/bb/T/AppTranslocation/UUID/d/GitLab for Mac.app/Contents/MacOS/gitlab-for-mac"),
+            &no_apps,
+        ),
         InstallTarget::Blocked(InstallBlocker::AppTranslocated)
     );
     assert_eq!(
-        detect_install_target_from_exe(Path::new(
-            "/Volumes/GitLab for Mac/GitLab for Mac.app/Contents/MacOS/gitlab-for-mac"
-        )),
+        detect_install_target_from_exe_with_apps(
+            Path::new("/Volumes/GitLab for Mac/GitLab for Mac.app/Contents/MacOS/gitlab-for-mac"),
+            &no_apps,
+        ),
         InstallTarget::Blocked(InstallBlocker::ReadOnlyVolume)
     );
+
+    // When a writable Applications folder exists, AppTranslocation / DMG / dev binary
+    // promote to 1-click in-app installation into Applications.
+    let apps_tmp = std::env::temp_dir().join(format!("glab-upd-apps-{}", std::process::id()));
+    std::fs::create_dir_all(&apps_tmp).unwrap();
+    let translocated = Path::new(
+        "/private/var/folders/aa/bb/T/AppTranslocation/UUID/d/GitLab for Mac.app/Contents/MacOS/gitlab-for-mac",
+    );
+    let promoted = detect_install_target_from_exe_with_apps(translocated, std::slice::from_ref(&apps_tmp));
+    assert!(promoted.can_install_in_app());
+    assert_eq!(promoted.destination_bundle(), Some(apps_tmp.join("GitLab for Mac.app").as_path()));
+    assert_eq!(promoted.action_label(), "Install to Applications & Restart");
 
     let tmp = std::env::temp_dir().join(format!("glab-upd-target-{}", std::process::id()));
     let bundle = tmp.join("GitLab for Mac.app");
     let exe = bundle.join("Contents/MacOS/gitlab-for-mac");
     std::fs::create_dir_all(exe.parent().unwrap()).unwrap();
-    assert_eq!(detect_install_target_from_exe(&exe), InstallTarget::WritableBundle(bundle));
+    assert_eq!(
+        detect_install_target_from_exe_with_apps(&exe, std::slice::from_ref(&apps_tmp)),
+        InstallTarget::WritableBundle(bundle)
+    );
     let _ = std::fs::remove_dir_all(&tmp);
+    let _ = std::fs::remove_dir_all(&apps_tmp);
 
     assert_eq!(parse_codesign_team_id("Authority=Dev\nTeamIdentifier=ABCDE12345\n"), Some("ABCDE12345".into()));
     assert_eq!(parse_codesign_team_id("Signature=adhoc\nTeamIdentifier=not set\n"), None);
@@ -399,7 +426,9 @@ fn extract_and_verify_real_adhoc_signed_macos_bundle() {
     assert!(Command::new("/usr/bin/ditto").args(["-c", "-k", "--keepParent"]).arg(&src_app).arg(&zip).status().unwrap().success());
 
     let staging = root.join("extracted");
-    let extracted = gitlab_for_mac::updater::install::extract_and_verify_bundle(&zip, &staging, &src_app).unwrap();
+    let extracted = gitlab_for_mac::updater::install::extract_and_verify_bundle(&zip, &staging, Some(&src_app)).unwrap();
     assert!(extracted.join("Contents/MacOS/gitlab-for-mac").is_file());
+    let extracted_fresh = gitlab_for_mac::updater::install::extract_and_verify_bundle(&zip, &root.join("extracted2"), None).unwrap();
+    assert!(extracted_fresh.join("Contents/MacOS/gitlab-for-mac").is_file());
     let _ = std::fs::remove_dir_all(&root);
 }

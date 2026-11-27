@@ -171,6 +171,11 @@ fn renders_all_update_phases_and_preferences_updates_card(cx: &mut TestAppContex
 
         for target in [
             InstallTarget::WritableBundle(PathBuf::from("/Applications/GitLab for Mac.app")),
+            InstallTarget::InstallToApplications {
+                target_bundle: PathBuf::from("/Applications/GitLab for Mac.app"),
+                current_bundle: None,
+                reason: InstallBlocker::AppTranslocated,
+            },
             InstallTarget::Blocked(InstallBlocker::AppTranslocated),
         ] {
             for phase in &phases {

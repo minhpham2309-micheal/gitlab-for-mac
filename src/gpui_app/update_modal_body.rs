@@ -88,28 +88,26 @@ fn render_available(
     cx: &App,
 ) -> (AnyElement, AnyElement) {
     let theme = cx.theme();
-    let blocker_box = match target {
-        InstallTarget::WritableBundle(_) => None,
-        InstallTarget::Blocked(blocker) => Some(
-            div().p_2p5().rounded_md().bg(theme.muted).border_1().border_color(theme.border)
-                .text_xs().text_color(theme.muted_foreground).child(blocker.explanation()),
-        ),
-    };
+    let note_box = target.info_note().map(|note| {
+        div().p_2p5().rounded_md().bg(theme.muted).border_1().border_color(theme.border)
+            .text_xs().text_color(theme.muted_foreground).child(note)
+    });
     let body = div().flex().flex_col().gap_2p5()
         .child(render_release_summary(info, cx))
-        .children(blocker_box)
+        .children(note_box)
         .into_any_element();
 
     let open_url = info.dmg_download_url.clone().unwrap_or_else(|| info.html_url.clone());
     let release_url = info.html_url.clone();
     let (st_skip, st_later, st_install) = (state.clone(), state.clone(), state.clone());
-    let primary_btn = match target {
-        InstallTarget::WritableBundle(_) => Button::new("update-install-btn")
-            .primary().small().label("Update & Restart")
-            .on_click(move |_, _, cx| st_install.update(cx, |s, cx| s.start_update_install(cx))),
-        InstallTarget::Blocked(_) => Button::new("update-open-release-btn")
-            .primary().small().icon(Icon::new(IconName::ExternalLink).size_3p5()).label("Download Release")
-            .on_click(move |_, _, _| { let _ = safe_open_url(&open_url); }),
+    let primary_btn = if target.can_install_in_app() {
+        Button::new("update-install-btn")
+            .primary().small().label(target.action_label())
+            .on_click(move |_, _, cx| st_install.update(cx, |s, cx| s.start_update_install(cx)))
+    } else {
+        Button::new("update-open-release-btn")
+            .primary().small().icon(Icon::new(IconName::ExternalLink).size_3p5()).label(target.action_label())
+            .on_click(move |_, _, _| { let _ = safe_open_url(&open_url); })
     };
     let footer = div().w_full().flex().items_center().justify_between().gap_2()
         .child(Button::new("update-github-link").ghost().xsmall().icon(Icon::new(IconName::ExternalLink).size_3p5()).label("View on GitHub").on_click(move |_, _, _| {

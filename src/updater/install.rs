@@ -19,30 +19,77 @@ pub fn resolve_app_bundle_from_exe(exe_path: &Path) -> Option<PathBuf> {
     (bundle.extension().and_then(|s| s.to_str()) == Some("app")).then(|| bundle.to_path_buf())
 }
 
-pub fn detect_install_target_from_exe(exe_path: &Path) -> InstallTarget {
+fn default_applications_dirs() -> Vec<PathBuf> {
+    let mut dirs_list = vec![PathBuf::from("/Applications")];
+    if let Some(home) = dirs::home_dir() {
+        dirs_list.push(home.join("Applications"));
+    }
+    dirs_list
+}
+
+fn fallback_install_target(
+    reason: InstallBlocker,
+    current_bundle: Option<PathBuf>,
+    apps_dirs: &[PathBuf],
+) -> InstallTarget {
+    for dir in apps_dirs {
+        if dir.is_dir() && is_dir_writable(dir) {
+            return InstallTarget::InstallToApplications {
+                target_bundle: dir.join(APP_BUNDLE_NAME),
+                current_bundle,
+                reason,
+            };
+        }
+    }
+    for dir in apps_dirs {
+        if !dir.exists() && fs::create_dir_all(dir).is_ok() && is_dir_writable(dir) {
+            return InstallTarget::InstallToApplications {
+                target_bundle: dir.join(APP_BUNDLE_NAME),
+                current_bundle,
+                reason,
+            };
+        }
+    }
+    InstallTarget::Blocked(reason)
+}
+
+pub fn detect_install_target_from_exe_with_apps(
+    exe_path: &Path,
+    apps_dirs: &[PathBuf],
+) -> InstallTarget {
     let Some(bundle) = resolve_app_bundle_from_exe(exe_path) else {
-        return InstallTarget::Blocked(InstallBlocker::NotAnAppBundle);
+        return fallback_install_target(InstallBlocker::NotAnAppBundle, None, apps_dirs);
     };
     let path_str = bundle.to_string_lossy();
     if path_str.contains("/AppTranslocation/") {
-        return InstallTarget::Blocked(InstallBlocker::AppTranslocated);
+        return fallback_install_target(InstallBlocker::AppTranslocated, Some(bundle), apps_dirs);
     }
     if path_str.starts_with("/Volumes/") {
-        return InstallTarget::Blocked(InstallBlocker::ReadOnlyVolume);
+        return fallback_install_target(InstallBlocker::ReadOnlyVolume, Some(bundle), apps_dirs);
     }
     let Some(parent) = bundle.parent() else {
-        return InstallTarget::Blocked(InstallBlocker::NotWritable(bundle));
+        return fallback_install_target(InstallBlocker::NotWritable(bundle.clone()), Some(bundle), apps_dirs);
     };
     if !is_dir_writable(parent) {
-        return InstallTarget::Blocked(InstallBlocker::NotWritable(parent.to_path_buf()));
+        return fallback_install_target(
+            InstallBlocker::NotWritable(parent.to_path_buf()),
+            Some(bundle),
+            apps_dirs,
+        );
     }
     InstallTarget::WritableBundle(bundle)
+}
+
+pub fn detect_install_target_from_exe(exe_path: &Path) -> InstallTarget {
+    detect_install_target_from_exe_with_apps(exe_path, &default_applications_dirs())
 }
 
 pub fn detect_current_install_target() -> InstallTarget {
     std::env::current_exe()
         .map(|exe| detect_install_target_from_exe(&exe))
-        .unwrap_or(InstallTarget::Blocked(InstallBlocker::NotAnAppBundle))
+        .unwrap_or_else(|_| {
+            fallback_install_target(InstallBlocker::NotAnAppBundle, None, &default_applications_dirs())
+        })
 }
 
 fn is_dir_writable(dir: &Path) -> bool {
@@ -71,18 +118,14 @@ fn read_bundle_team_id(bundle: &Path) -> Option<String> {
 pub fn extract_and_verify_bundle(
     zip_path: &Path,
     staging_dir: &Path,
-    current_bundle: &Path,
+    current_bundle: Option<&Path>,
 ) -> Result<PathBuf> {
     if staging_dir.exists() {
         fs::remove_dir_all(staging_dir)?;
     }
     fs::create_dir_all(staging_dir)?;
 
-    let ditto = Command::new("/usr/bin/ditto")
-        .args(["-x", "-k"])
-        .arg(zip_path)
-        .arg(staging_dir)
-        .output()?;
+    let ditto = Command::new("/usr/bin/ditto").args(["-x", "-k"]).arg(zip_path).arg(staging_dir).output()?;
     if !ditto.status.success() {
         return Err(UpdateError::Message(format!(
             "Failed to unpack update archive: {}",
@@ -91,10 +134,7 @@ pub fn extract_and_verify_bundle(
     }
 
     let extracted = locate_extracted_app(staging_dir)?;
-    let verify = Command::new("/usr/bin/codesign")
-        .args(["--verify", "--deep", "--strict"])
-        .arg(&extracted)
-        .output()?;
+    let verify = Command::new("/usr/bin/codesign").args(["--verify", "--deep", "--strict"]).arg(&extracted).output()?;
     if !verify.status.success() {
         return Err(UpdateError::Message(format!(
             "Update bundle failed macOS code-signature verification: {}",
@@ -102,7 +142,7 @@ pub fn extract_and_verify_bundle(
         )));
     }
 
-    if let Some(expected_team) = read_bundle_team_id(current_bundle) {
+    if let Some(expected_team) = current_bundle.and_then(read_bundle_team_id) {
         let actual_team = read_bundle_team_id(&extracted);
         if actual_team.as_deref() != Some(expected_team.as_str()) {
             return Err(UpdateError::Message(format!(
@@ -133,9 +173,7 @@ fn locate_extracted_app(staging_dir: &Path) -> Result<PathBuf> {
     let bin = candidate.join("Contents").join("MacOS").join(APP_EXECUTABLE_NAME);
     let plist = candidate.join("Contents").join("Info.plist");
     if !bin.is_file() || !plist.is_file() {
-        return Err(UpdateError::Message(
-            "Extracted .app bundle is missing Contents/MacOS executable or Info.plist".into(),
-        ));
+        return Err(UpdateError::Message("Extracted .app bundle is missing executable or Info.plist".into()));
     }
     Ok(candidate)
 }
@@ -144,27 +182,32 @@ const SWAP_SCRIPT: &str = r#"
 pid="$1"; target="$2"; incoming="$3"; backup="$4"; cleanup="$5"
 i=0
 while kill -0 "$pid" 2>/dev/null && [ "$i" -lt 150 ]; do sleep 0.1; i=$((i + 1)); done
-if ! mv "$target" "$backup"; then rm -rf "$incoming"; exit 1; fi
+had_target=0
+if [ -e "$target" ]; then
+  had_target=1
+  if ! mv "$target" "$backup"; then rm -rf "$incoming"; exit 1; fi
+fi
 if mv "$incoming" "$target"; then
   rm -rf "$backup" "$cleanup"
+  /usr/bin/xattr -dr com.apple.quarantine "$target" 2>/dev/null || true
   /usr/bin/open -n "$target"
 else
-  mv "$backup" "$target" 2>/dev/null || true
+  if [ "$had_target" -eq 1 ]; then mv "$backup" "$target" 2>/dev/null || true; fi
   rm -rf "$incoming"
   exit 1
 fi
 "#;
 
 pub fn stage_sibling_and_spawn_relaunch(
-    current_bundle: &Path,
+    target_bundle: &Path,
     extracted_bundle: &Path,
     cleanup_root: &Path,
     current_pid: u32,
 ) -> Result<()> {
-    let parent = current_bundle
+    let parent = target_bundle
         .parent()
-        .ok_or_else(|| UpdateError::Message("Current app bundle has no parent directory".into()))?;
-    let name = current_bundle
+        .ok_or_else(|| UpdateError::Message("Target app bundle has no parent directory".into()))?;
+    let name = target_bundle
         .file_name()
         .and_then(|s| s.to_str())
         .unwrap_or(APP_BUNDLE_NAME);
@@ -179,14 +222,14 @@ pub fn stage_sibling_and_spawn_relaunch(
         let _ = fs::remove_dir_all(&incoming);
         return Err(UpdateError::Message(format!(
             "Failed to stage updated bundle next to {}: {}",
-            current_bundle.display(),
+            target_bundle.display(),
             String::from_utf8_lossy(&copy.stderr).trim()
         )));
     }
 
     let mut cmd = Command::new("/bin/sh");
     cmd.args(["-c", SWAP_SCRIPT, "--", &current_pid.to_string()])
-        .arg(current_bundle)
+        .arg(target_bundle)
         .arg(&incoming)
         .arg(&backup)
         .arg(cleanup_root)
