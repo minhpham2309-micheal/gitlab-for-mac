@@ -2,6 +2,14 @@
 
 use serde::Deserialize;
 
+pub use super::mr_readiness::{
+    mr_merge_readiness, parse_system_note, MergeReadiness, MergeReadinessTone, ParsedSystemNote,
+    SystemCommitEntry,
+};
+pub use super::types_mr::{
+    AwardEmoji, MergeRequest, Milestone, MrActivityFilter, MrApprovalUser, MrApprovals,
+    MrListCounts, MrListQuery, MrPage, MrSortField, SortDir, TimeStats,
+};
 pub use super::types_review::{
     Branch, BridgeJob, DiffPosition, DiffRefs, Discussion, DiscussionNote, IssueFilter,
     RawTraceChunk, ReleaseLinks, TodoProject, TodoTarget,
@@ -61,40 +69,6 @@ pub struct Job {
     pub started_at: Option<String>,
     pub finished_at: Option<String>,
     pub allow_failure: Option<bool>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct MergeRequest {
-    pub id: u64,
-    pub iid: u64,
-    pub title: String,
-    pub state: String,
-    pub source_branch: String,
-    pub target_branch: String,
-    pub web_url: String,
-    pub merge_status: Option<String>,
-    pub has_conflicts: Option<bool>,
-    pub author: Option<User>,
-    #[serde(default)]
-    pub description: Option<String>,
-    #[serde(default)]
-    pub labels: Vec<String>,
-    #[serde(default)]
-    pub draft: bool,
-    #[serde(default)]
-    pub created_at: Option<String>,
-    #[serde(default)]
-    pub updated_at: Option<String>,
-    #[serde(default)]
-    pub diff_refs: Option<DiffRefs>,
-    #[serde(default)]
-    pub head_pipeline: Option<Pipeline>,
-    #[serde(default)]
-    pub reviewers: Vec<User>,
-    #[serde(default)]
-    pub assignees: Vec<User>,
-    #[serde(default)]
-    pub user_notes_count: u32,
 }
 
 #[derive(Debug, Clone, Deserialize)]

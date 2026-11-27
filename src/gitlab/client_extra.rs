@@ -55,6 +55,43 @@ impl GitLab {
             .and_then(|s| s.trim().parse::<u32>().ok()))
     }
 
+    pub(super) async fn send_page<T: DeserializeOwned>(
+        &self,
+        path: &str,
+    ) -> Result<(Vec<T>, Option<u32>, Option<usize>)> {
+        let response = send_with_redirects(
+            &self.http,
+            Method::GET,
+            self.url(path)?,
+            &self.origin,
+            &self.auth.token,
+            None,
+            &[],
+        )
+        .await?;
+        let status = response.status();
+        let total = response
+            .headers()
+            .get("x-total")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.trim().parse::<u32>().ok());
+        let next_page = response
+            .headers()
+            .get("x-next-page")
+            .and_then(|v| v.to_str().ok())
+            .and_then(parse_next_page);
+        let bytes = response.bytes().await?;
+        if !status.is_success() {
+            return Err(GitLabError::from_status(
+                status,
+                String::from_utf8_lossy(&bytes).into_owned(),
+            ));
+        }
+        let items: Vec<T> = serde_json::from_slice(&bytes)
+            .map_err(|err| GitLabError::Message(err.to_string()))?;
+        Ok((items, total, next_page))
+    }
+
     pub(super) async fn send_paginated<T: DeserializeOwned>(
         &self,
         path: &str,

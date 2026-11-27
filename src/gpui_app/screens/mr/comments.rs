@@ -5,8 +5,8 @@ use gpui_kit::{
 
 use crate::runtime::spawn_tokio;
 
-use super::merge_requests::MergeRequestsView;
-use super::mr_annotations::resolve_diff_position;
+use super::annotations::resolve_diff_position;
+use super::MergeRequestsView;
 
 impl MergeRequestsView {
     pub fn open_inline_composer(

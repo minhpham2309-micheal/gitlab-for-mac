@@ -92,7 +92,20 @@ impl AppState {
             };
             self.history.push(NavEntry { project_id, screen, target });
             self.switch_screen_no_history(screen, cx);
+        } else if screen == Screen::MergeRequests && matches!(self.history.current().target, NavTarget::MrDetail { .. }) {
+            self.record_mr_list(cx);
+            self.dispatch_command(ScreenCommand::ShowMrList, cx);
         }
+    }
+
+    pub fn record_mr_detail(&mut self, iid: u64, cx: &mut Context<Self>) {
+        let project_id = self.project.as_ref().map(|p| p.id);
+        self.push_history(NavEntry { project_id, screen: Screen::MergeRequests, target: NavTarget::MrDetail { iid } }, cx);
+    }
+
+    pub fn record_mr_list(&mut self, cx: &mut Context<Self>) {
+        let project_id = self.project.as_ref().map(|p| p.id);
+        self.push_history(NavEntry::screen(project_id, Screen::MergeRequests), cx);
     }
 
     pub fn record_overview_dir(&mut self, git_ref: String, path: String, cx: &mut Context<Self>) {
@@ -169,7 +182,11 @@ impl AppState {
                 }
         self.switch_screen_no_history(entry.screen, cx);
         match entry.target {
-            NavTarget::Screen => {}
+            NavTarget::Screen => {
+                if entry.screen == Screen::MergeRequests {
+                    self.dispatch_command(ScreenCommand::ShowMrList, cx);
+                }
+            }
             NavTarget::OverviewDir { git_ref, path } => {
                 self.set_active_ref(git_ref.clone());
                 self.dispatch_command(ScreenCommand::OpenOverviewRef { git_ref, path }, cx);
@@ -186,6 +203,10 @@ impl AppState {
             }
             NavTarget::Pipeline { pipeline_id } => {
                 self.dispatch_command(ScreenCommand::OpenPipeline { pipeline_id }, cx);
+            }
+            NavTarget::MrDetail { iid } => {
+                let project_id = entry.project_id.or_else(|| self.project.as_ref().map(|p| p.id)).unwrap_or(0);
+                self.dispatch_command(ScreenCommand::OpenMr { project_id, iid }, cx);
             }
         }
         cx.notify();

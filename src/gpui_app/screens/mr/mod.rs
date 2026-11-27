@@ -1,0 +1,193 @@
+mod actions;
+mod activity;
+pub mod annotations;
+mod breadcrumb;
+mod changes;
+mod changes_chrome;
+mod comments;
+mod commits_tab;
+mod detail_header;
+mod detail_loader;
+mod discussion_card;
+mod edit_dialog;
+mod list_row;
+mod list_view;
+mod merge_widget;
+mod mutations;
+mod overview;
+mod pipelines_tab;
+mod sidebar;
+mod widgets;
+
+use gpui_kit::{
+    component::{
+        diff::{DiffLinePosition, DiffMode, DiffState},
+        input::{InputEvent, InputState},
+        ActiveTheme as _,
+    },
+    div, AppContext as _, Context, Entity, IntoElement, ParentElement as _, Render, Styled as _,
+    Subscription, Task, Window,
+};
+
+use crate::gitlab::{
+    AwardEmoji, BridgeJob, Discussion, Job, MergeRequest, MrActivityFilter, MrApprovals, MrFilter,
+    MrListCounts, MrSortField, Pipeline, RawDiff, RepoCommit, SortDir, User,
+};
+use crate::nav::Screen;
+
+use super::super::diff_hl::new_diff_state;
+use super::super::markdown::MarkdownProjectContext;
+use super::super::state::{AppEvent, AppState, ScreenCommand};
+use self::breadcrumb::render_mr_breadcrumb;
+use self::changes::render_mr_changes;
+use self::commits_tab::render_mr_commits_tab;
+use self::detail_header::render_mr_detail_header;
+use self::list_view::render_mr_list_view;
+use self::overview::render_mr_overview;
+use self::pipelines_tab::render_mr_pipelines_tab;
+
+pub struct MergeRequestsView {
+    pub(crate) state: Entity<AppState>,
+    pub(crate) filter: MrFilter,
+    pub(crate) sort_field: MrSortField,
+    pub(crate) sort_dir: SortDir,
+    pub(crate) page: usize,
+    pub(crate) per_page: usize,
+    pub(crate) next_page: Option<usize>,
+    pub(crate) counts: MrListCounts,
+    pub(crate) search_input: Entity<InputState>,
+    pub(crate) search_history: Vec<String>,
+    pub(crate) mrs: Vec<MergeRequest>,
+    pub(crate) list_loading: bool,
+    pub(crate) selected: Option<MergeRequest>,
+    pub(crate) pending_iid: Option<u64>,
+    pub(crate) active_tab: usize,
+    pub(crate) approvals: Option<MrApprovals>,
+    pub(crate) approvals_expanded: bool,
+    pub(crate) merge_details_expanded: bool,
+    pub(crate) remove_source_branch: bool,
+    pub(crate) squash_commits: bool,
+    pub(crate) commits: Vec<RepoCommit>,
+    pub(crate) mr_pipelines: Vec<Pipeline>,
+    pub(crate) head_pipeline_jobs: Vec<Job>,
+    pub(crate) head_pipeline_bridges: Vec<BridgeJob>,
+    pub(crate) participants: Vec<User>,
+    pub(crate) award_emojis: Vec<AwardEmoji>,
+    pub(crate) todo_added: bool,
+    pub(crate) activity_filter: MrActivityFilter,
+    pub(crate) activity_desc: bool,
+    pub(crate) raw_diffs: Vec<RawDiff>,
+    pub(crate) fallback_notices: Vec<(String, String)>,
+    pub(crate) has_truncated: bool,
+    pub(crate) diff_state: Entity<DiffState>,
+    pub(crate) discussions: Vec<Discussion>,
+    pub(crate) discussions_error: Option<String>,
+    pub(crate) inline_target: Option<DiffLinePosition>,
+    pub(crate) replying_to: Option<String>,
+    pub(crate) comment_input: Entity<InputState>,
+    pub(crate) reply_input: Entity<InputState>,
+    pub(crate) inline_input: Entity<InputState>,
+    pub(crate) list_task: Option<Task<()>>,
+    pub(crate) counts_task: Option<Task<()>>,
+    pub(crate) detail_task: Option<Task<()>>,
+    pub(crate) mutation_task: Option<Task<()>>,
+    _subs: Vec<Subscription>,
+}
+
+impl MergeRequestsView {
+    pub fn new(state: Entity<AppState>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let mode = if state.read(cx).prefs.default_diff_split { DiffMode::Split } else { DiffMode::Unified };
+        let diff_state = cx.new(|cx| new_diff_state(Vec::new(), mode, cx));
+        let search_input = cx.new(|cx| InputState::new(window, cx).placeholder("Search or filter results..."));
+        let comment_input = cx.new(|cx| InputState::new(window, cx).placeholder("Write a comment…"));
+        let reply_input = cx.new(|cx| InputState::new(window, cx).placeholder("Reply to thread…"));
+        let inline_input = cx.new(|cx| InputState::new(window, cx).placeholder("Add inline review comment…"));
+        let sub_search = cx.subscribe_in(&search_input, window, |this, _, ev: &InputEvent, _, cx| {
+            if matches!(ev, InputEvent::PressEnter { .. }) { this.submit_search(cx); }
+        });
+        let sub = cx.subscribe_in(&state, window, |this, _, ev: &AppEvent, _, cx| match ev {
+            AppEvent::HostChanged { .. } | AppEvent::ProjectChanged { .. } => {
+                this.reset_state(cx);
+                if this.state.read(cx).screen == Screen::MergeRequests { this.load_list(cx); }
+            }
+            AppEvent::ScreenChanged { screen } if *screen == Screen::MergeRequests => {
+                if this.mrs.is_empty() && !this.list_loading { this.load_list(cx); }
+                this.sync_summary(cx);
+            }
+            AppEvent::Command(ScreenCommand::Refresh) if this.state.read(cx).screen == Screen::MergeRequests => {
+                if let Some(mr) = this.selected.clone() { this.select_mr(mr, false, cx); } else { this.load_list(cx); }
+            }
+            AppEvent::Command(ScreenCommand::ShowMrList) => this.show_list_without_history(cx),
+            AppEvent::Command(ScreenCommand::ApproveMr) => this.exec_mr_mutation("approve", cx),
+            AppEvent::Command(ScreenCommand::MergeMr) => this.exec_mr_mutation("merge", cx),
+            AppEvent::Command(ScreenCommand::CloseMr) => this.exec_mr_mutation("close", cx),
+            AppEvent::Command(ScreenCommand::OpenMr { iid, .. }) => this.open_mr_by_iid(*iid, cx),
+            AppEvent::PrefsChanged => {
+                let m = if this.state.read(cx).prefs.default_diff_split { DiffMode::Split } else { DiffMode::Unified };
+                this.diff_state.update(cx, |ds, cx| ds.set_mode(m, cx));
+            }
+            _ => {}
+        });
+        Self {
+            state, filter: MrFilter::Open, sort_field: MrSortField::CreatedAt, sort_dir: SortDir::Desc,
+            page: 1, per_page: 20, next_page: None, counts: MrListCounts::default(),
+            search_input, search_history: Vec::new(), mrs: Vec::new(), list_loading: false,
+            selected: None, pending_iid: None, active_tab: 0, approvals: None,
+            approvals_expanded: false, merge_details_expanded: true, remove_source_branch: false,
+            squash_commits: false, commits: Vec::new(), mr_pipelines: Vec::new(),
+            head_pipeline_jobs: Vec::new(), head_pipeline_bridges: Vec::new(),
+            participants: Vec::new(), award_emojis: Vec::new(), todo_added: false,
+            activity_filter: MrActivityFilter::All, activity_desc: false,
+            raw_diffs: Vec::new(), fallback_notices: Vec::new(), has_truncated: false,
+            diff_state, discussions: Vec::new(), discussions_error: None,
+            inline_target: None, replying_to: None, comment_input, reply_input, inline_input,
+            list_task: None, counts_task: None, detail_task: None, mutation_task: None,
+            _subs: vec![sub_search, sub],
+        }
+    }
+
+    pub fn diff_mode(&self, cx: &gpui_kit::App) -> DiffMode { self.diff_state.read(cx).mode() }
+    pub fn selected_iid(&self) -> Option<u64> { self.selected.as_ref().map(|m| m.iid) }
+    pub fn active_tab(&self) -> usize { self.active_tab }
+    pub fn filter(&self) -> MrFilter { self.filter }
+
+    pub fn toggle_diff_mode(&mut self, cx: &mut Context<Self>) {
+        let next = if self.diff_state.read(cx).mode() == DiffMode::Split { DiffMode::Unified } else { DiffMode::Split };
+        self.diff_state.update(cx, |ds, cx| ds.set_mode(next, cx));
+        cx.notify();
+    }
+}
+
+impl Render for MergeRequestsView {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let (project, client, md_ctx) = {
+            let st = self.state.read(cx);
+            (st.project.clone(), st.gitlab.clone(), MarkdownProjectContext::from_state(st, cx))
+        };
+        let Some(project) = project else {
+            return div()
+                .size_full().flex().items_center().justify_center()
+                .text_sm().text_color(cx.theme().muted_foreground)
+                .child("Select a project to view its merge requests")
+                .into_any_element();
+        };
+
+        let breadcrumb = render_mr_breadcrumb(&project, self.selected.as_ref().map(|m| m.iid), &self.state, cx);
+        let body = if let Some(mr) = self.selected.clone() {
+            let header = render_mr_detail_header(self, &mr, cx);
+            let tab_body = match self.active_tab {
+                0 => render_mr_overview(self, &mr, &project, md_ctx, client.as_ref(), cx).into_any_element(),
+                1 => render_mr_commits_tab(self, &mr, cx).into_any_element(),
+                2 => render_mr_pipelines_tab(self, &mr, cx).into_any_element(),
+                _ => render_mr_changes(self, &mr, md_ctx, cx).into_any_element(),
+            };
+            div().flex_1().min_h_0().flex().flex_col().child(header)
+                .child(div().flex_1().min_h_0().flex().flex_col().child(tab_body))
+                .into_any_element()
+        } else {
+            render_mr_list_view(self, &project, client.as_ref(), cx).into_any_element()
+        };
+
+        div().size_full().flex().flex_col().child(breadcrumb).child(body).into_any_element()
+    }
+}
