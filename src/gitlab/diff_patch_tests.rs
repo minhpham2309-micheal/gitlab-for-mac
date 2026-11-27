@@ -78,3 +78,42 @@ fn round_trips_through_gpui_diff_file_parser() {
     assert_eq!(files[0].additions(), 1);
     assert_eq!(files[0].deletions(), 1);
 }
+
+#[test]
+fn deserializes_null_diff_metadata_fields_from_gitlab_commit_diff_api() {
+    let payload = r#"[
+        {
+            "old_path": "src/app.rs",
+            "new_path": "src/app.rs",
+            "a_mode": "100644",
+            "b_mode": "100644",
+            "diff": "--- a/src/app.rs\n+++ b/src/app.rs\n@@ -1,2 +1,3 @@\n fn main() {}\n+// ok\n // end\n",
+            "new_file": false,
+            "renamed_file": false,
+            "deleted_file": false,
+            "too_large": null,
+            "collapsed": null,
+            "generated_file": null
+        },
+        {
+            "old_path": null,
+            "new_path": "assets/new.txt",
+            "diff": null,
+            "new_file": true,
+            "renamed_file": null,
+            "deleted_file": null,
+            "generated_file": null
+        }
+    ]"#;
+    let diffs: Vec<RawDiff> = serde_json::from_str(payload).unwrap();
+    assert_eq!(diffs.len(), 2);
+    assert!(!diffs[0].generated_file);
+    assert!(!diffs[0].too_large);
+    assert!(!diffs[0].collapsed);
+    assert!(diffs[0].to_single_file_patch().is_ok());
+
+    assert_eq!(diffs[1].old_path, "");
+    assert_eq!(diffs[1].new_path, "assets/new.txt");
+    assert!(diffs[1].new_file);
+    assert!(diffs[1].to_single_file_patch().unwrap().contains("new file mode 100644"));
+}

@@ -1,4 +1,12 @@
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
+
+fn null_to_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Default + Deserialize<'de>,
+{
+    Ok(Option::<T>::deserialize(deserializer)?.unwrap_or_default())
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiffKind {
@@ -36,29 +44,31 @@ pub struct MrDiff {
 
 #[derive(Deserialize)]
 pub struct ChangesPayload {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_to_default")]
     pub overflow: bool,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_to_default")]
     pub changes: Vec<RawDiff>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct RawDiff {
+    #[serde(default, deserialize_with = "null_to_default")]
     pub old_path: String,
+    #[serde(default, deserialize_with = "null_to_default")]
     pub new_path: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_to_default")]
     pub diff: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_to_default")]
     pub new_file: bool,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_to_default")]
     pub renamed_file: bool,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_to_default")]
     pub deleted_file: bool,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_to_default")]
     pub too_large: bool,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_to_default")]
     pub collapsed: bool,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_to_default")]
     pub generated_file: bool,
 }
 

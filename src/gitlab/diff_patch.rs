@@ -42,8 +42,18 @@ impl RawDiff {
     }
 
     pub fn to_single_file_patch(&self) -> Result<String, String> {
-        let old = validate_path(&self.old_path)?;
-        let new = validate_path(&self.new_path)?;
+        let old_raw = if self.old_path.is_empty() && self.new_file {
+            &self.new_path
+        } else {
+            &self.old_path
+        };
+        let new_raw = if self.new_path.is_empty() && self.deleted_file {
+            &self.old_path
+        } else {
+            &self.new_path
+        };
+        let old = validate_path(old_raw)?;
+        let new = validate_path(new_raw)?;
         let header_a = format_git_path("a/", old);
         let header_b = format_git_path("b/", new);
         let mut patch = format!("diff --git {header_a} {header_b}\n");
