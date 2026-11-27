@@ -18,6 +18,7 @@ use thiserror::Error;
 pub const DEFAULT_GITHUB_API_BASE: &str = "https://api.github.com";
 pub const DEFAULT_GITHUB_REPO: &str = "minhpham2309-micheal/gitlab-for-mac";
 pub const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const BUILD_SHORT_SHA: Option<&str> = option_env!("GITLAB_FOR_MAC_BUILD_SHA");
 pub const APP_BUNDLE_NAME: &str = "GitLab for Mac.app";
 pub const APP_EXECUTABLE_NAME: &str = "gitlab-for-mac";
 pub const MAX_UPDATE_ARCHIVE_BYTES: u64 = 256 * 1024 * 1024;
@@ -164,7 +165,53 @@ impl InstallBlocker {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InstallTarget {
     WritableBundle(PathBuf),
+    InstallToApplications {
+        target_bundle: PathBuf,
+        current_bundle: Option<PathBuf>,
+        reason: InstallBlocker,
+    },
     Blocked(InstallBlocker),
+}
+
+impl InstallTarget {
+    pub fn destination_bundle(&self) -> Option<&std::path::Path> {
+        match self {
+            Self::WritableBundle(path) => Some(path.as_path()),
+            Self::InstallToApplications { target_bundle, .. } => Some(target_bundle.as_path()),
+            Self::Blocked(_) => None,
+        }
+    }
+
+    pub fn current_bundle(&self) -> Option<&std::path::Path> {
+        match self {
+            Self::WritableBundle(path) => Some(path.as_path()),
+            Self::InstallToApplications { current_bundle, .. } => current_bundle.as_deref(),
+            Self::Blocked(_) => None,
+        }
+    }
+
+    pub fn can_install_in_app(&self) -> bool {
+        self.destination_bundle().is_some()
+    }
+
+    pub fn action_label(&self) -> &'static str {
+        match self {
+            Self::WritableBundle(_) => "Update & Restart",
+            Self::InstallToApplications { .. } => "Install to Applications & Restart",
+            Self::Blocked(_) => "Download Release",
+        }
+    }
+
+    pub fn info_note(&self) -> Option<String> {
+        match self {
+            Self::WritableBundle(_) => None,
+            Self::InstallToApplications { target_bundle, .. } => Some(format!(
+                "Will install directly to {} and relaunch.",
+                target_bundle.display()
+            )),
+            Self::Blocked(blocker) => Some(blocker.explanation()),
+        }
+    }
 }
 
 #[derive(Debug, Error)]

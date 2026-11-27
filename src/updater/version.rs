@@ -2,7 +2,7 @@ use semver::Version;
 use serde::Deserialize;
 
 use super::manifest::{clean_release_notes, is_allowed_download_url};
-use super::{UpdateChannel, UpdateInfo};
+use super::{UpdateChannel, UpdateInfo, BUILD_SHORT_SHA};
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct GitHubRelease {
@@ -116,12 +116,49 @@ pub fn select_release_assets(assets: &[GitHubAsset], arch: &str) -> Option<Selec
     Some(SelectedAssets { app_zip, checksums, dmg_url })
 }
 
+pub fn is_same_canary_build(
+    candidate_id: &str,
+    installed_canary_id: Option<&str>,
+    built_sha: Option<&str>,
+) -> bool {
+    if installed_canary_id.is_some_and(|id| id.eq_ignore_ascii_case(candidate_id)) {
+        return true;
+    }
+    let (Some(cand_sha), Some(local_sha)) = (
+        candidate_id.strip_prefix("canary-"),
+        built_sha.map(str::trim).filter(|s| s.len() >= 7),
+    ) else {
+        return false;
+    };
+    let a = cand_sha.to_ascii_lowercase();
+    let b = local_sha.to_ascii_lowercase();
+    a == b || a.starts_with(&b) || b.starts_with(&a)
+}
+
 pub fn evaluate_release(
     release: &GitHubRelease,
     channel: UpdateChannel,
     current_version: &str,
     arch: &str,
     installed_canary_id: Option<&str>,
+) -> Option<UpdateInfo> {
+    evaluate_release_with_sha(
+        release,
+        channel,
+        current_version,
+        arch,
+        installed_canary_id,
+        BUILD_SHORT_SHA,
+    )
+}
+
+pub fn evaluate_release_with_sha(
+    release: &GitHubRelease,
+    channel: UpdateChannel,
+    current_version: &str,
+    arch: &str,
+    installed_canary_id: Option<&str>,
+    built_sha: Option<&str>,
 ) -> Option<UpdateInfo> {
     if release.draft {
         return None;
@@ -135,10 +172,7 @@ pub fn evaluate_release(
         }
         UpdateChannel::Canary if release.tag_name == "canary" => {
             let id = extract_canary_id(release)?;
-            let built_sha = option_env!("GITLAB_FOR_MAC_BUILD_SHA");
-            if installed_canary_id == Some(id.as_str())
-                || built_sha.is_some_and(|sha| id == format!("canary-{sha}"))
-            {
+            if is_same_canary_build(&id, installed_canary_id, built_sha) {
                 return None;
             }
             let label = id

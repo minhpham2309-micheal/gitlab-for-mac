@@ -8,7 +8,7 @@ use crate::runtime::runtime_handle;
 use crate::updater::client::download_and_verify;
 use crate::updater::install::{extract_and_verify_bundle, stage_sibling_and_spawn_relaunch};
 use crate::updater::{
-    updates_cache_dir, DownloadProgress, InstallTarget, UpdateConfig, UpdateInfo,
+    updates_cache_dir, DownloadProgress, UpdateConfig, UpdateInfo,
 };
 
 use super::state::AppState;
@@ -45,9 +45,10 @@ impl AppState {
         let Some(info) = self.update.info().cloned() else {
             return;
         };
-        let InstallTarget::WritableBundle(current_bundle) = self.update.install_target.clone() else {
+        let Some(target_bundle) = self.update.install_target.destination_bundle().map(PathBuf::from) else {
             return;
         };
+        let current_bundle = self.update.install_target.current_bundle().map(PathBuf::from);
         if self.update.is_busy() {
             return;
         }
@@ -70,7 +71,7 @@ impl AppState {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let pid = std::process::id();
         let handle = runtime_handle().spawn(async move {
-            run_install_pipeline(cfg, info, current_bundle, pid, tx).await;
+            run_install_pipeline(cfg, info, target_bundle, current_bundle, pid, tx).await;
         });
         let guard = AbortGuard(handle);
 
@@ -126,7 +127,8 @@ impl AppState {
 async fn run_install_pipeline(
     cfg: UpdateConfig,
     info: UpdateInfo,
-    current_bundle: PathBuf,
+    target_bundle: PathBuf,
+    current_bundle: Option<PathBuf>,
     pid: u32,
     tx: mpsc::UnboundedSender<InstallStep>,
 ) {
@@ -153,9 +155,8 @@ async fn run_install_pipeline(
     let _ = tx.send(InstallStep::Verifying);
     let staging_dir = cache_root.join("extracted");
     let zip_path = archive.zip_path;
-    let bundle_for_verify = current_bundle.clone();
     let extracted = match tokio::task::spawn_blocking(move || {
-        extract_and_verify_bundle(&zip_path, &staging_dir, &bundle_for_verify)
+        extract_and_verify_bundle(&zip_path, &staging_dir, current_bundle.as_deref())
     })
     .await
     {
@@ -172,7 +173,7 @@ async fn run_install_pipeline(
 
     let _ = tx.send(InstallStep::Installing);
     let swap_res = tokio::task::spawn_blocking(move || {
-        stage_sibling_and_spawn_relaunch(&current_bundle, &extracted, &cache_root, pid)
+        stage_sibling_and_spawn_relaunch(&target_bundle, &extracted, &cache_root, pid)
     })
     .await;
     match swap_res {

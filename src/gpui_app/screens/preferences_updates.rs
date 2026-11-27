@@ -9,7 +9,7 @@ use gpui_kit::{
 };
 
 use crate::prefs::Prefs;
-use crate::updater::{current_macos_arch, InstallTarget, UpdateChannel, CURRENT_VERSION};
+use crate::updater::{current_macos_arch, UpdateChannel, BUILD_SHORT_SHA, CURRENT_VERSION};
 
 use super::super::pajamas_theme::status_color;
 use super::super::state::UpdatePhase;
@@ -92,15 +92,16 @@ pub fn render_updates_card(
         )
         .test_support();
 
-    let blocker_note = match target {
-        InstallTarget::WritableBundle(_) => None,
-        InstallTarget::Blocked(blocker) => Some(
-            div()
-                .text_xs()
-                .text_color(theme.muted_foreground)
-                .child(blocker.explanation()),
-        ),
+    let version_heading = match BUILD_SHORT_SHA {
+        Some(sha) => format!("Version v{CURRENT_VERSION} ({sha})"),
+        None => format!("Version v{CURRENT_VERSION}"),
     };
+    let blocker_note = target.info_note().map(|note| {
+        div()
+            .text_xs()
+            .text_color(theme.muted_foreground)
+            .child(note)
+    });
 
     card_shell("Software Updates", cx)
         .id("pref-updates-card")
@@ -122,7 +123,7 @@ pub fn render_updates_card(
                         .flex()
                         .flex_col()
                         .gap_0p5()
-                        .child(div().text_sm().text_color(theme.foreground).child(format!("Version v{CURRENT_VERSION}")))
+                        .child(div().text_sm().text_color(theme.foreground).child(version_heading))
                         .child(div().min_w_0().text_xs().text_color(status_fg).child(status_text)),
                 )
                 .child(version_controls),
