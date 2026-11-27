@@ -4,8 +4,8 @@ use gpui_kit::{
         spinner::Spinner,
         ActiveTheme as _, Icon, Sizable as _,
     },
-    div, Context, InteractiveElement as _, IntoElement, ParentElement as _, SharedString,
-    StatefulInteractiveElement as _, Styled as _,
+    div, px, Context, InteractiveElement as _, IntoElement, ParentElement as _, SharedString,
+    StatefulInteractiveElement as _, Styled as _, TestSupportExt as _,
 };
 
 use crate::gitlab::job_is_live;
@@ -30,6 +30,7 @@ pub fn render_job_card(
     card: StageJobCard,
     selected_job_id: Option<u64>,
     dark: bool,
+    scale: f32,
     can_run_ci: bool,
     cx: &mut Context<PipelinesView>,
 ) -> impl IntoElement {
@@ -43,59 +44,63 @@ pub fn render_job_card(
     let allow_fail = job.allow_failure.unwrap_or(false) && job.status == "failed";
     let click_job = job.clone();
 
+    let pad_x = px((8.0 * scale).round().max(4.0));
+    let pad_y = px((6.0 * scale).round().max(3.0));
+    let gap = px((4.0 * scale).round().max(2.0));
+    let icon_sz = px((14.0 * scale).round().clamp(10.0, 26.0));
+    let title_sz = px((12.0 * scale).round().clamp(9.0, 22.0));
+    let meta_sz = px((11.0 * scale).round().clamp(8.5, 20.0));
+    let large_btn = scale >= 1.35;
+
     let status_el = if live {
-        Spinner::new().xsmall().color(color).into_any_element()
+        if scale >= 1.3 {
+            Spinner::new().small().color(color).into_any_element()
+        } else {
+            Spinner::new().xsmall().color(color).into_any_element()
+        }
     } else {
         Icon::empty()
             .path(status_icon_path(&job.status))
-            .size_3p5()
+            .size(icon_sz)
             .text_color(color)
             .into_any_element()
     };
 
     let mut actions = div().flex().items_center().gap_1().flex_shrink_0();
     if can_run_ci && !card.is_bridge {
-        if job.status == "manual" {
+        let btn = if job.status == "manual" {
             let j_play = job.clone();
-            actions = actions.child(
-                Button::new(SharedString::from(format!("jg-play-{job_id}")))
-                    .ghost()
-                    .xsmall()
-                    .label("Play")
-                    .on_click(cx.listener(move |this, _, w, cx| {
-                        cx.stop_propagation();
-                        this.confirm_play_job(j_play.clone(), w, cx);
-                    })),
-            );
+            Button::new(SharedString::from(format!("jg-play-{job_id}")))
+                .ghost()
+                .label("Play")
+                .on_click(cx.listener(move |this, _, w, cx| {
+                    cx.stop_propagation();
+                    this.confirm_play_job(j_play.clone(), w, cx);
+                }))
         } else if live {
-            actions = actions.child(
-                Button::new(SharedString::from(format!("jg-cancel-{job_id}")))
-                    .ghost()
-                    .xsmall()
-                    .label("Cancel")
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        cx.stop_propagation();
-                        this.run_job_action(job_id, "cancel", cx);
-                    })),
-            );
+            Button::new(SharedString::from(format!("jg-cancel-{job_id}")))
+                .ghost()
+                .label("Cancel")
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    cx.stop_propagation();
+                    this.run_job_action(job_id, "cancel", cx);
+                }))
         } else {
-            actions = actions.child(
-                Button::new(SharedString::from(format!("jg-retry-{job_id}")))
-                    .ghost()
-                    .xsmall()
-                    .label("↻")
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        cx.stop_propagation();
-                        this.run_job_action(job_id, "retry", cx);
-                    })),
-            );
-        }
+            Button::new(SharedString::from(format!("jg-retry-{job_id}")))
+                .ghost()
+                .label("↻")
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    cx.stop_propagation();
+                    this.run_job_action(job_id, "retry", cx);
+                }))
+        };
+        actions = actions.child(if large_btn { btn.small() } else { btn.xsmall() });
     }
 
     div()
         .id(SharedString::from(format!("job-card-{job_id}")))
-        .px_2()
-        .py_1p5()
+        .px(pad_x)
+        .py(pad_y)
         .rounded_md()
         .cursor_pointer()
         .border_1()
@@ -112,7 +117,7 @@ pub fn render_job_card(
         .hover(|s| s.bg(theme.list_hover))
         .flex()
         .flex_col()
-        .gap_1()
+        .gap(gap)
         .on_click(cx.listener(move |this, _, _, cx| {
             if !card.is_bridge {
                 this.select_job(click_job.clone(), cx);
@@ -123,15 +128,15 @@ pub fn render_job_card(
                 .flex()
                 .items_center()
                 .justify_between()
-                .gap_1()
+                .gap(gap)
                 .child(
                     div()
                         .flex()
                         .items_center()
-                        .gap_1p5()
+                        .gap(gap)
                         .min_w_0()
                         .child(status_el)
-                        .child(div().text_xs().text_color(theme.foreground).truncate().child(job.name)),
+                        .child(div().text_size(title_sz).text_color(theme.foreground).truncate().child(job.name)),
                 )
                 .child(actions),
         )
@@ -139,8 +144,8 @@ pub fn render_job_card(
             div()
                 .flex()
                 .items_center()
-                .gap_1p5()
-                .text_xs()
+                .gap(gap)
+                .text_size(meta_sz)
                 .text_color(theme.muted_foreground)
                 .children((!dur.is_empty()).then(|| div().child(dur)))
                 .children((card.retry_count > 0).then(|| {
@@ -149,4 +154,5 @@ pub fn render_job_card(
                 .children(allow_fail.then(|| div().text_color(theme.warning).child("allowed")))
                 .children(card.is_bridge.then(|| div().text_color(theme.info).child("downstream"))),
         )
+        .test_support()
 }

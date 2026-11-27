@@ -5,7 +5,7 @@ use gpui_kit::{
         ActiveTheme as _, Icon, Sizable as _,
     },
     div, px, uniform_list, Context, InteractiveElement as _, IntoElement, ParentElement as _,
-    SharedString, StatefulInteractiveElement as _, Styled as _,
+    SharedString, StatefulInteractiveElement as _, Styled as _, TestSupportExt as _,
 };
 
 use crate::gitlab::{pipeline_is_live, Pipeline};
@@ -84,6 +84,7 @@ pub fn render_pipelines_list(
                 };
                 div()
                     .id(SharedString::from(format!("pipe-row-{}", p.id)))
+                    .w_full()
                     .h(px(58.))
                     .px_3()
                     .border_b_1()
@@ -100,33 +101,52 @@ pub fn render_pipelines_list(
                     })
                     .child(
                         div()
+                            .w_full()
                             .flex()
                             .items_center()
                             .justify_between()
                             .gap_2()
                             .child(
                                 div()
+                                    .flex_1()
                                     .flex()
                                     .items_center()
                                     .gap_1p5()
                                     .min_w_0()
-                                    .child(status_el)
-                                    .child(div().text_sm().text_color(theme.foreground).truncate().child(p.git_ref)),
+                                    .child(div().flex_shrink_0().flex().items_center().child(status_el))
+                                    .child(
+                                        div()
+                                            .id(SharedString::from(format!("pipe-name-{}", p.id)))
+                                            .flex_1()
+                                            .min_w_0()
+                                            .text_sm()
+                                            .text_color(theme.foreground)
+                                            .truncate()
+                                            .child(p.git_ref)
+                                            .test_support(),
+                                    ),
                             )
                             .child(
                                 div()
+                                    .id(SharedString::from(format!("pipe-id-{}", p.id)))
+                                    .flex_shrink_0()
+                                    .text_right()
                                     .text_xs()
                                     .font_family(theme.mono_font_family.clone())
                                     .text_color(theme.muted_foreground)
-                                    .child(format!("#{}", p.id)),
+                                    .child(format!("#{}", p.id))
+                                    .test_support(),
                             ),
                     )
                     .child(
                         div()
+                            .w_full()
+                            .truncate()
                             .text_xs()
                             .text_color(theme.muted_foreground)
                             .child(format!("{short_sha} · {}", p.source.unwrap_or_default())),
                     )
+                    .test_support()
             })
             .collect()
     })
