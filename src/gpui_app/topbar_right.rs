@@ -2,6 +2,7 @@ use gpui_kit::{
     component::{
         button::{Button, ButtonVariants as _},
         menu::{DropdownMenu as _, PopupMenuItem},
+        spinner::Spinner,
         ActiveTheme as _, Icon, IconName, Sizable as _,
     },
     div, px, App, Entity, InteractiveElement as _, IntoElement, ParentElement as _, SharedString,
@@ -11,6 +12,7 @@ use gpui_kit::{
 use crate::nav::Screen;
 
 use super::avatar::render_avatar;
+use super::pajamas_theme::status_color;
 use super::safe_url::safe_open_url;
 use super::state::{AppState, ScreenCommand};
 
@@ -63,6 +65,11 @@ pub fn render_top_bar_right(state: &Entity<AppState>, cx: &mut App) -> impl Into
         .unwrap_or_else(|| "U".into());
 
     let perms = st.project_permissions;
+    let show_update = st
+        .update
+        .should_show_topbar_pill(st.prefs.dismissed_update_version.as_deref());
+    let update_label = st.update.topbar_label();
+    let update_busy = st.update.is_busy();
     let plus_state = state.clone();
     let web_for_issue = project_web;
     let plus_btn = Button::new("topbar-quick-plus")
@@ -121,11 +128,47 @@ pub fn render_top_bar_right(state: &Entity<AppState>, cx: &mut App) -> impl Into
         })
         .child(avatar_el);
 
+    let update_pill = if show_update
+        && let Some(label) = update_label
+    {
+        let upd_state = state.clone();
+        let dark = cx.theme().is_dark();
+        let accent = status_color(if update_busy { "running" } else { "success" }, dark);
+        Some(
+            div()
+                .id("topbar-update-pill")
+                .h(px(24.))
+                .px_2()
+                .rounded_full()
+                .bg(accent.opacity(0.18))
+                .border_1()
+                .border_color(accent.opacity(0.45))
+                .text_xs()
+                .text_color(accent)
+                .flex()
+                .items_center()
+                .gap_1()
+                .cursor_pointer()
+                .hover(move |s| s.bg(accent.opacity(0.28)))
+                .on_click(move |_, _, cx| {
+                    upd_state.update(cx, |s, cx| s.open_update_modal(cx));
+                })
+                .children(update_busy.then(|| Spinner::new().xsmall()))
+                .children((!update_busy).then(|| {
+                    Icon::empty().path("icons/glab-rocket.svg").size_3().text_color(accent)
+                }))
+                .child(SharedString::from(label)),
+        )
+    } else {
+        None
+    };
+
     div()
         .flex()
         .items_center()
         .gap_1()
         .flex_shrink_0()
+        .children(update_pill)
         .child(plus_btn)
         .child(count_pill("top-issues", "icons/glab-issue.svg", issues_count, !has_project, Screen::Issues, state.clone(), cx))
         .child(count_pill("top-mrs", "icons/glab-mr.svg", mrs_count, !has_project, Screen::MergeRequests, state.clone(), cx))

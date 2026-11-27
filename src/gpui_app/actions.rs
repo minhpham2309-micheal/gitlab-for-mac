@@ -46,6 +46,7 @@ gpui_kit::actions!(
         ApproveMrAction,
         MergeMrAction,
         CloseMrAction,
+        CheckForUpdates,
     ]
 );
 

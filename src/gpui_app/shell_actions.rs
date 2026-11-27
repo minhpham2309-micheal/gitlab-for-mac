@@ -125,6 +125,12 @@ pub fn attach_shell_actions(
             let prefs = this.state().update(cx, |s, cx| s.reset_ui_font_size(cx));
             apply_theme_from_prefs(&prefs, cx);
         }))
+        .on_action(cx.listener(|this, _: &CheckForUpdates, _, cx| {
+            this.state().update(cx, |s, cx| {
+                s.open_update_modal(cx);
+                s.check_for_updates(true, cx);
+            });
+        }))
         .on_action(cx.listener(|this, _: &OpenInBrowser, window, cx| {
             let url = this.state().read(cx).summary.active_web_url.clone();
             if let Some(url) = url {

@@ -7,6 +7,7 @@ use crate::prefs::{self, Prefs};
 
 use super::nav_history::{NavEntry, NavHistory};
 pub use super::state_types::{AppEvent, ScreenCommand, ScreenContextSummary, SidebarCounts};
+pub use super::state_updater::{UpdatePhase, UpdateUiState};
 
 pub struct AppState {
     pub hosts: Vec<HostAuth>,
@@ -32,8 +33,10 @@ pub struct AppState {
     pub project_epoch: u64,
     pub counts: SidebarCounts,
     pub summary: ScreenContextSummary,
+    pub update: UpdateUiState,
     pub(super) host_load_task: Option<Task<()>>,
     pub(super) counts_task: Option<Task<()>>,
+    pub(super) update_task: Option<Task<()>>,
 }
 
 impl EventEmitter<AppEvent> for AppState {}
@@ -74,8 +77,10 @@ impl AppState {
             project_epoch: 1,
             counts: SidebarCounts::default(),
             summary: ScreenContextSummary::default(),
+            update: UpdateUiState::detect(),
             host_load_task: None,
             counts_task: None,
+            update_task: None,
         }
     }
 

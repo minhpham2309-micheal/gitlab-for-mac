@@ -103,7 +103,8 @@ pub fn render_palette_overlay<F: Fn(&mut Window, &mut App) + Clone + 'static>(
         .item(act_item("Toggle dark / light theme", false, ToggleTheme))
         .item(act_item("Increase UI font size (⌘+)", false, ZoomIn))
         .item(act_item("Decrease UI font size (⌘-)", false, ZoomOut))
-        .item(act_item("Reset UI font size (⌘0)", false, ZoomReset));
+        .item(act_item("Reset UI font size (⌘0)", false, ZoomReset))
+        .item(act_item("Check for updates", false, CheckForUpdates));
 
     let close_cancel = on_close.clone();
     let close_confirm = on_close.clone();

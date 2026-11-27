@@ -20,9 +20,13 @@ pub mod state;
 mod state_loaders;
 mod state_nav;
 pub mod state_types;
+pub mod state_updater;
+mod state_updater_install;
 pub mod statusbar;
 pub mod topbar;
 mod topbar_right;
+pub mod update_modal;
+mod update_modal_body;
 
 use std::borrow::Cow;
 

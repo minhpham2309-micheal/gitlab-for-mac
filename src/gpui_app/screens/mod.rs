@@ -21,6 +21,7 @@ pub mod pipelines_run_dialog;
 pub mod preferences;
 pub mod preferences_cards;
 pub mod preferences_typography;
+pub mod preferences_updates;
 pub mod projects;
 pub mod projects_row;
 pub mod repository;

@@ -3,6 +3,8 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::updater::UpdateChannel;
+
 pub const DEFAULT_UI_FONT_SIZE: u16 = 16;
 pub const MIN_UI_FONT_SIZE: u16 = 12;
 pub const MAX_UI_FONT_SIZE: u16 = 22;
@@ -46,6 +48,18 @@ pub struct Prefs {
     pub pipeline_graph_zoom: Option<u16>,
     #[serde(default)]
     pub pinned_screens: Vec<String>,
+    #[serde(default)]
+    pub auto_check_updates: Option<bool>,
+    #[serde(default)]
+    pub update_channel: UpdateChannel,
+    #[serde(default)]
+    pub dismissed_update_version: Option<String>,
+    #[serde(default)]
+    pub update_etag: Option<String>,
+    #[serde(default)]
+    pub last_update_check_epoch: Option<u64>,
+    #[serde(default)]
+    pub installed_canary_id: Option<String>,
 }
 
 impl Prefs {
@@ -95,6 +109,10 @@ impl Prefs {
         self.pipeline_graph_zoom
             .unwrap_or(DEFAULT_PIPELINE_GRAPH_ZOOM)
             .clamp(MIN_PIPELINE_GRAPH_ZOOM, MAX_PIPELINE_GRAPH_ZOOM)
+    }
+
+    pub fn auto_check_updates(&self) -> bool {
+        self.auto_check_updates.unwrap_or(true)
     }
 
     pub fn pinned(&self) -> Vec<crate::nav::Screen> {
