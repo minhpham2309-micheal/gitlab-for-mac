@@ -1,7 +1,9 @@
 use std::path::PathBuf;
 
 use gpui_kit::{
-    px, size, AppContext as _, Bounds, Focusable as _, TestAppContext, WindowBounds, WindowOptions,
+    px, size,
+    test::TestWindowExt as _,
+    AppContext as _, Bounds, Focusable as _, TestAppContext, WindowBounds, WindowOptions,
 };
 
 use gitlab_for_mac::gpui_app::{
@@ -149,7 +151,10 @@ fn renders_all_update_phases_and_preferences_updates_card(cx: &mut TestAppContex
         // Draw every modal phase with both WritableBundle and Blocked install targets.
         let phases = vec![
             UpdatePhase::Checking,
-            UpdatePhase::UpToDate { checked_at: 1_700_000_000 },
+            UpdatePhase::UpToDate {
+                checked_at: 1_700_000_000,
+                note: Some("No Stable release published yet · Switch to Canary for rolling builds.".into()),
+            },
             UpdatePhase::Available(Box::new(info.clone())),
             UpdatePhase::Downloading {
                 info: Box::new(info.clone()),
@@ -178,6 +183,22 @@ fn renders_all_update_phases_and_preferences_updates_card(cx: &mut TestAppContex
                 win.draw(cx).clear(cx);
             }
         }
+        // Verify long status/error messages wrap without overflowing Check for Updates outside card.
+        state.update(cx, |s, cx| {
+            s.update.modal_open = false;
+            s.update.phase = UpdatePhase::Error {
+                message: "No Stable release published yet — switch Release channel to Canary to test rolling builds and verify long wrapping text stays inside card bounds.".into(),
+                info: None,
+            };
+            cx.notify();
+        });
+        win.render_frame(cx);
+        let card = win.find("pref-updates-card").bounds();
+        let controls = win.find("pref-update-controls").bounds();
+        assert!(
+            controls.right() <= card.right() && controls.left() >= card.left(),
+            "Check for Updates controls overflowed Software Updates card: controls={controls:?}, card={card:?}"
+        );
     })
     .unwrap();
 }

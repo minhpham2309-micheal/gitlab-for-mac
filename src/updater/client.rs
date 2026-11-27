@@ -54,7 +54,7 @@ pub async fn check_for_update(cfg: &UpdateConfig) -> Result<UpdateCheckResult> {
         return Ok(UpdateCheckResult::NotModified);
     }
     if resp.status() == StatusCode::NOT_FOUND {
-        return Err(diagnose_not_found(&client, cfg, &api_origin, token.as_deref()).await);
+        return handle_not_found(&client, cfg, &api_origin, token.as_deref()).await;
     }
     if !resp.status().is_success() {
         return Err(UpdateError::Message(format!(
@@ -83,41 +83,51 @@ pub async fn check_for_update(cfg: &UpdateConfig) -> Result<UpdateCheckResult> {
         None => Ok(UpdateCheckResult::UpToDate {
             current_version: cfg.current_version.clone(),
             etag,
+            note: None,
         }),
     }
 }
 
-async fn diagnose_not_found(
+async fn handle_not_found(
     client: &reqwest::Client,
     cfg: &UpdateConfig,
     api_origin: &url::Origin,
     token: Option<&str>,
-) -> UpdateError {
-    if cfg.channel == UpdateChannel::Stable {
-        let list_url = format!("{}/repos/{}/releases?per_page=5", cfg.api_base.trim_end_matches('/'), cfg.repo);
-        if let Ok(list_resp) = get_with_origin_bound_auth(
-            client,
-            &list_url,
-            api_origin,
-            token,
-            "application/vnd.github+json",
-            None,
-        )
-        .await
-            && list_resp.status().is_success()
-        {
-            let releases = list_resp.json::<Vec<GitHubRelease>>().await.unwrap_or_default();
-            if releases.iter().any(|r| !r.draft && (r.prerelease || r.tag_name == "canary")) {
-                return UpdateError::Message(
-                    "No Stable release published yet — switch Release channel to Canary to test rolling builds."
-                        .into(),
-                );
-            }
-            return UpdateError::Message("No Stable release has been published yet.".into());
-        }
-    }
-    UpdateError::Message(
-        "No published release found (or repository is private — run `gh auth login` or publish releases publicly)."
-            .into(),
+) -> Result<UpdateCheckResult> {
+    let list_url = format!(
+        "{}/repos/{}/releases?per_page=5",
+        cfg.api_base.trim_end_matches('/'),
+        cfg.repo
+    );
+    if let Ok(list_resp) = get_with_origin_bound_auth(
+        client,
+        &list_url,
+        api_origin,
+        token,
+        "application/vnd.github+json",
+        None,
     )
+    .await
+        && list_resp.status().is_success()
+    {
+        let releases = list_resp.json::<Vec<GitHubRelease>>().await.unwrap_or_default();
+        let note = match cfg.channel {
+            UpdateChannel::Stable
+                if releases.iter().any(|r| !r.draft && (r.prerelease || r.tag_name == "canary")) =>
+            {
+                "No Stable release published yet · Switch to Canary for rolling builds."
+            }
+            UpdateChannel::Stable => "No Stable release published yet.",
+            UpdateChannel::Canary => "No Canary release published yet.",
+        };
+        return Ok(UpdateCheckResult::UpToDate {
+            current_version: cfg.current_version.clone(),
+            etag: None,
+            note: Some(note.into()),
+        });
+    }
+    Err(UpdateError::Message(
+        "Unable to access GitHub Releases (private repo — run `gh auth login` or publish releases publicly)."
+            .into(),
+    ))
 }

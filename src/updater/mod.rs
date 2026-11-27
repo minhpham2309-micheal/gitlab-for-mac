@@ -115,7 +115,7 @@ pub struct UpdateInfo {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UpdateCheckResult {
-    UpToDate { current_version: String, etag: Option<String> },
+    UpToDate { current_version: String, etag: Option<String>, note: Option<String> },
     NotModified,
     Available { info: Box<UpdateInfo>, etag: Option<String> },
 }

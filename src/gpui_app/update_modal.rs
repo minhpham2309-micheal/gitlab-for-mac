@@ -142,13 +142,16 @@ pub(super) fn render_release_summary(info: &UpdateInfo, cx: &App) -> AnyElement 
         .gap_2()
         .child(
             div()
+                .w_full()
+                .min_w_0()
                 .flex()
                 .items_center()
                 .justify_between()
                 .gap_2()
-                .child(div().text_sm().text_color(theme.foreground).child(info.name.clone()))
+                .child(div().flex_1().min_w_0().text_sm().text_color(theme.foreground).child(info.name.clone()))
                 .child(
                     div()
+                        .flex_shrink_0()
                         .px_2()
                         .py(px(1.))
                         .rounded_full()

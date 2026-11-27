@@ -128,6 +128,8 @@ pub fn render_viewer_and_preview_cards(prefs: &Prefs, cx: &mut Context<Preferenc
 pub(crate) fn card_shell(title: &'static str, cx: &Context<PreferencesView>) -> gpui_kit::Div {
     let theme = cx.theme();
     div()
+        .w_full()
+        .min_w_0()
         .p_4()
         .rounded_lg()
         .border_1()
@@ -147,6 +149,8 @@ pub(crate) fn setting_row(
 ) -> impl IntoElement {
     let theme = cx.theme();
     div()
+        .w_full()
+        .min_w_0()
         .pt_2()
         .border_t_1()
         .border_color(theme.border.opacity(0.45))
@@ -156,11 +160,13 @@ pub(crate) fn setting_row(
         .gap_4()
         .child(
             div()
+                .flex_1()
+                .min_w_0()
                 .flex()
                 .flex_col()
                 .gap_0p5()
                 .child(div().text_sm().text_color(theme.foreground).child(label))
                 .child(div().text_xs().text_color(theme.muted_foreground).child(hint)),
         )
-        .child(control)
+        .child(div().flex_shrink_0().child(control))
 }

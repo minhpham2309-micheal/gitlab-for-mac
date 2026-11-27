@@ -14,7 +14,7 @@ use super::state::AppState;
 pub enum UpdatePhase {
     Idle,
     Checking,
-    UpToDate { checked_at: u64 },
+    UpToDate { checked_at: u64, note: Option<String> },
     Available(Box<UpdateInfo>),
     Downloading { info: Box<UpdateInfo>, downloaded: u64, total: Option<u64> },
     Verifying { info: Box<UpdateInfo> },
@@ -143,21 +143,23 @@ impl AppState {
                     self.status = format!("Update v{ver} is available");
                 }
             }
-            Ok(Ok(UpdateCheckResult::UpToDate { current_version, etag })) => {
+            Ok(Ok(UpdateCheckResult::UpToDate { current_version, etag, note })) => {
                 self.prefs.last_update_check_epoch = Some(now);
                 self.prefs.update_etag = etag;
                 self.save_prefs();
-                self.update.phase = UpdatePhase::UpToDate { checked_at: now };
                 if manual {
-                    self.status = format!("GitLab for Mac v{current_version} is up to date");
+                    self.status = note
+                        .clone()
+                        .unwrap_or_else(|| format!("GitLab for Mac v{current_version} is up to date"));
                 }
+                self.update.phase = UpdatePhase::UpToDate { checked_at: now, note };
             }
             Ok(Ok(UpdateCheckResult::NotModified)) => {
                 self.prefs.last_update_check_epoch = Some(now);
                 self.save_prefs();
                 self.update.phase = match prev_phase {
                     UpdatePhase::Available(info) => UpdatePhase::Available(info),
-                    _ => UpdatePhase::UpToDate { checked_at: now },
+                    _ => UpdatePhase::UpToDate { checked_at: now, note: None },
                 };
                 if manual {
                     self.status = "Already on the latest release".into();
