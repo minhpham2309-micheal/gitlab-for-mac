@@ -11,6 +11,10 @@ pub const MIN_MONO_FONT_SIZE: u16 = 10;
 pub const MAX_MONO_FONT_SIZE: u16 = 22;
 pub const DEFAULT_RADIUS: u16 = 6;
 pub const DEFAULT_SIDEBAR_WIDTH: u16 = 248;
+pub const DEFAULT_PIPELINE_GRAPH_ZOOM: u16 = 100;
+pub const MIN_PIPELINE_GRAPH_ZOOM: u16 = 60;
+pub const MAX_PIPELINE_GRAPH_ZOOM: u16 = 180;
+pub const PIPELINE_GRAPH_ZOOM_STEP: i16 = 10;
 pub const DEFAULT_UI_FONT: &str = ".SystemUIFont";
 pub const DEFAULT_MONO_FONT: &str = "JetBrains Mono";
 
@@ -38,6 +42,8 @@ pub struct Prefs {
     pub default_diff_split: bool,
     #[serde(default)]
     pub default_log_wrap: bool,
+    #[serde(default)]
+    pub pipeline_graph_zoom: Option<u16>,
     #[serde(default)]
     pub pinned_screens: Vec<String>,
 }
@@ -85,6 +91,12 @@ impl Prefs {
             .clamp(200, 340)
     }
 
+    pub fn pipeline_graph_zoom(&self) -> u16 {
+        self.pipeline_graph_zoom
+            .unwrap_or(DEFAULT_PIPELINE_GRAPH_ZOOM)
+            .clamp(MIN_PIPELINE_GRAPH_ZOOM, MAX_PIPELINE_GRAPH_ZOOM)
+    }
+
     pub fn pinned(&self) -> Vec<crate::nav::Screen> {
         let resolved: Vec<_> = self
             .pinned_screens
@@ -109,6 +121,7 @@ impl Prefs {
         self.sidebar_width = Some(DEFAULT_SIDEBAR_WIDTH);
         self.default_diff_split = false;
         self.default_log_wrap = false;
+        self.pipeline_graph_zoom = Some(DEFAULT_PIPELINE_GRAPH_ZOOM);
     }
 }
 
@@ -166,6 +179,7 @@ mod tests {
         assert_eq!(prefs.mono_font_family(), DEFAULT_MONO_FONT);
         assert_eq!(prefs.radius(), DEFAULT_RADIUS);
         assert_eq!(prefs.sidebar_width(), DEFAULT_SIDEBAR_WIDTH);
+        assert_eq!(prefs.pipeline_graph_zoom(), DEFAULT_PIPELINE_GRAPH_ZOOM);
     }
 
     #[test]
@@ -175,13 +189,18 @@ mod tests {
             mono_font_size: Some(4),
             radius: Some(50),
             sidebar_width: Some(50),
+            pipeline_graph_zoom: Some(250),
             ..Prefs::default()
         };
         assert_eq!(p.ui_font_size(), MAX_UI_FONT_SIZE);
         assert_eq!(p.mono_font_size(), MIN_MONO_FONT_SIZE);
         assert_eq!(p.radius(), 14);
         assert_eq!(p.sidebar_width(), 200);
+        assert_eq!(p.pipeline_graph_zoom(), MAX_PIPELINE_GRAPH_ZOOM);
+        p.pipeline_graph_zoom = Some(20);
+        assert_eq!(p.pipeline_graph_zoom(), MIN_PIPELINE_GRAPH_ZOOM);
         p.reset_ui_defaults();
         assert_eq!(p.ui_font_size(), DEFAULT_UI_FONT_SIZE);
+        assert_eq!(p.pipeline_graph_zoom(), DEFAULT_PIPELINE_GRAPH_ZOOM);
     }
 }

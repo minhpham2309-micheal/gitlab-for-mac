@@ -98,6 +98,7 @@ impl AppShell {
     pub fn has_overlay_open(&self, cx: &gpui_kit::App) -> bool { self.palette_open || self.is_find_file_open(cx) }
     pub fn state(&self) -> &Entity<AppState> { &self.state }
     pub fn mrs_view(&self) -> &Entity<MergeRequestsView> { &self.mrs_view }
+    pub fn pipelines_view(&self) -> &Entity<PipelinesView> { &self.pipelines_view }
     pub fn repo_view(&self) -> &Entity<RepositoryView> { &self.repo_view }
     pub fn overview_view(&self) -> &Entity<ProjectOverviewView> { &self.overview_view }
 

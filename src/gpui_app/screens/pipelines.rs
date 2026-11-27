@@ -31,6 +31,7 @@ pub struct PipelinesView {
     pub(crate) log_offset: u64,
     pub(crate) auto_scroll_tail: bool,
     pub(crate) wrap_lines: bool,
+    pub(crate) graph_zoom_pct: u16,
     pub(crate) log_scroll: UniformListScrollHandle,
     pub(crate) search_input: Entity<InputState>,
     pub(crate) search_hits: Vec<LogSearchHit>,
@@ -80,18 +81,24 @@ impl PipelinesView {
                 }
             }
             AppEvent::PrefsChanged => {
-                this.wrap_lines = this.state.read(cx).prefs.default_log_wrap;
+                let prefs = &this.state.read(cx).prefs;
+                this.wrap_lines = prefs.default_log_wrap;
+                this.graph_zoom_pct = prefs.pipeline_graph_zoom();
                 cx.notify();
             }
             AppEvent::Command(cmd) => this.handle_command(cmd.clone(), w, cx),
         });
-        let initial_wrap = state.read(cx).prefs.default_log_wrap;
+        let (initial_wrap, initial_zoom) = {
+            let prefs = &state.read(cx).prefs;
+            (prefs.default_log_wrap, prefs.pipeline_graph_zoom())
+        };
         Self {
             state, visible: false, pipelines: Vec::new(), selected_pipeline: None,
             pending_pipeline_id: None,
             jobs: Vec::new(), bridges: Vec::new(), selected_job: None, branches: Vec::new(),
             log_model: LogModel::new(), visible_rows: Vec::new(), log_offset: 0,
-            auto_scroll_tail: true, wrap_lines: initial_wrap, log_scroll: UniformListScrollHandle::new(),
+            auto_scroll_tail: true, wrap_lines: initial_wrap, graph_zoom_pct: initial_zoom,
+            log_scroll: UniformListScrollHandle::new(),
             search_input, search_hits: Vec::new(), search_idx: 0, sel_anchor: None, sel_end: None,
             load_task: None, jobs_task: None, ci_poll_task: None, trace_poll_task: None,
             search_debounce_task: None, action_task: None, download_task: None,
@@ -185,7 +192,13 @@ impl PipelinesView {
 impl Render for PipelinesView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let left = render_pipelines_list(self.pipelines.clone(), self.selected_pipeline.as_ref(), cx);
-        let graph = render_stage_graph(&self.jobs, &self.bridges, self.selected_job.as_ref().map(|j| j.id), cx);
+        let graph = render_stage_graph(
+            &self.jobs,
+            &self.bridges,
+            self.selected_job.as_ref().map(|j| j.id),
+            self.graph_zoom_pct,
+            cx,
+        );
         let log_view = render_job_log(self, cx);
         let right = v_resizable("pipelines-right-split")
             .child(resizable_panel().size(px(270.)).size_range(px(140.)..px(520.)).child(graph))
