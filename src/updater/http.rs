@@ -76,6 +76,15 @@ pub async fn get_with_origin_bound_auth(
     Err(UpdateError::Message("too many HTTP redirects".into()))
 }
 
+fn resolve_gh_binary() -> &'static str {
+    for candidate in ["/opt/homebrew/bin/gh", "/usr/local/bin/gh", "/opt/local/bin/gh"] {
+        if std::path::Path::new(candidate).is_file() {
+            return candidate;
+        }
+    }
+    "gh"
+}
+
 pub async fn resolve_github_token(cfg: &UpdateConfig) -> Option<String> {
     if let Some(tok) = cfg
         .github_token
@@ -97,7 +106,7 @@ pub async fn resolve_github_token(cfg: &UpdateConfig) -> Option<String> {
     }
     let out = tokio::time::timeout(
         Duration::from_secs(3),
-        tokio::process::Command::new("gh")
+        tokio::process::Command::new(resolve_gh_binary())
             .args(["auth", "token"])
             .output(),
     )

@@ -86,7 +86,11 @@ where
     )
     .await?;
 
-    if resp.status() == StatusCode::NOT_FOUND && !info.asset_api_url.is_empty() {
+    if matches!(
+        resp.status(),
+        StatusCode::NOT_FOUND | StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN
+    ) && !info.asset_api_url.is_empty()
+    {
         if token.is_none() {
             token = resolve_github_token(cfg).await;
         }

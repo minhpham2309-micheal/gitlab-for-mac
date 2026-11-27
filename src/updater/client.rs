@@ -54,10 +54,7 @@ pub async fn check_for_update(cfg: &UpdateConfig) -> Result<UpdateCheckResult> {
         return Ok(UpdateCheckResult::NotModified);
     }
     if resp.status() == StatusCode::NOT_FOUND {
-        return Err(UpdateError::Message(
-            "No published release found (or repository is private — run `gh auth login` or publish releases publicly)."
-                .into(),
-        ));
+        return Err(diagnose_not_found(&client, cfg, &api_origin, token.as_deref()).await);
     }
     if !resp.status().is_success() {
         return Err(UpdateError::Message(format!(
@@ -88,4 +85,39 @@ pub async fn check_for_update(cfg: &UpdateConfig) -> Result<UpdateCheckResult> {
             etag,
         }),
     }
+}
+
+async fn diagnose_not_found(
+    client: &reqwest::Client,
+    cfg: &UpdateConfig,
+    api_origin: &url::Origin,
+    token: Option<&str>,
+) -> UpdateError {
+    if cfg.channel == UpdateChannel::Stable {
+        let list_url = format!("{}/repos/{}/releases?per_page=5", cfg.api_base.trim_end_matches('/'), cfg.repo);
+        if let Ok(list_resp) = get_with_origin_bound_auth(
+            client,
+            &list_url,
+            api_origin,
+            token,
+            "application/vnd.github+json",
+            None,
+        )
+        .await
+            && list_resp.status().is_success()
+        {
+            let releases = list_resp.json::<Vec<GitHubRelease>>().await.unwrap_or_default();
+            if releases.iter().any(|r| !r.draft && (r.prerelease || r.tag_name == "canary")) {
+                return UpdateError::Message(
+                    "No Stable release published yet — switch Release channel to Canary to test rolling builds."
+                        .into(),
+                );
+            }
+            return UpdateError::Message("No Stable release has been published yet.".into());
+        }
+    }
+    UpdateError::Message(
+        "No published release found (or repository is private — run `gh auth login` or publish releases publicly)."
+            .into(),
+    )
 }

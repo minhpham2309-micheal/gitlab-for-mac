@@ -332,6 +332,39 @@ async fn check_download_verify_and_strip_token_on_cross_origin_redirect() {
     let _ = std::fs::remove_dir_all(&bad_dest);
 }
 
+#[tokio::test]
+async fn stable_404_with_canary_prerelease_returns_clear_channel_hint() {
+    let api_base = spawn_mock_http(|req| {
+        let first = req.lines().next().unwrap_or("");
+        if first.starts_with("GET /repos/example/app/releases/latest") {
+            return (404, vec![], br#"{"message":"Not Found"}"#.to_vec());
+        }
+        if first.starts_with("GET /repos/example/app/releases?per_page=5") {
+            let body = serde_json::json!([
+                { "tag_name": "canary", "name": "Canary", "draft": false, "prerelease": true, "assets": [] }
+            ])
+            .to_string();
+            return (200, vec![("Content-Type".into(), "application/json".into())], body.into_bytes());
+        }
+        (404, vec![], Vec::new())
+    })
+    .await;
+
+    let cfg = UpdateConfig {
+        api_base,
+        repo: "example/app".into(),
+        channel: UpdateChannel::Stable,
+        current_version: "0.1.0".into(),
+        current_arch: "arm64",
+        etag: None,
+        installed_canary_id: None,
+        github_token: None,
+        allow_gh_cli_fallback: false,
+    };
+    let err = check_for_update(&cfg).await.unwrap_err().to_string();
+    assert!(err.contains("switch Release channel to Canary"), "unexpected error: {err}");
+}
+
 #[cfg(target_os = "macos")]
 #[test]
 fn extract_and_verify_real_adhoc_signed_macos_bundle() {
