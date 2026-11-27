@@ -189,6 +189,8 @@ fn mr_list_and_detail_match_gitlab_layout_and_navigation(cx: &mut TestAppContext
         let new_btn = win.find("mr-new-btn").bounds();
         let filter_bar = win.find("mr-filter-bar").bounds();
         let row = win.find("mr-list-row-53").bounds();
+        let ci_badge = win.find("mr-list-ci-53").bounds();
+        let updated = win.find("mr-list-updated-53").bounds();
         let footer = win.find("mr-list-footer").bounds();
 
         assert!(bc.bottom() <= tab_open.top());
@@ -198,6 +200,11 @@ fn mr_list_and_detail_match_gitlab_layout_and_navigation(cx: &mut TestAppContext
         assert!(filter_bar.bottom() <= row.top());
         assert_eq!(filter_bar.left(), row.left());
         assert_eq!(filter_bar.right(), row.right());
+        assert!(ci_badge.right() < updated.left(), "CI status pill should sit beside updated label: ci={ci_badge:?} updated={updated:?}");
+        let ci_mid = (ci_badge.top() + ci_badge.bottom()) / 2.0;
+        let upd_mid = (updated.top() + updated.bottom()) / 2.0;
+        assert!((ci_mid - upd_mid).abs() <= px(3.), "CI status pill and updated label must share the same row: ci={ci_badge:?} updated={updated:?}");
+        assert!(ci_badge.top() >= row.top() && ci_badge.bottom() <= row.bottom());
         // Footer ("Show 20 items") sits directly below the last MR row, not pinned to window bottom.
         assert!(footer.top() >= row.bottom() && (footer.top() - row.bottom()) <= px(24.), "footer={footer:?} too far below row={row:?}");
 
@@ -406,6 +413,45 @@ fn mr_detail_renders_test_summary_open_threads_auto_merge_and_composer(cx: &mut 
         win.render_frame(cx);
         win.click("mr-composer-write", cx);
         win.render_frame(cx);
+    })
+    .unwrap();
+}
+
+#[gpui_kit::test]
+fn mr_list_ci_status_badge_supports_running_spinner_and_opens_pipeline(cx: &mut TestAppContext) {
+    let (window, shell) = mount_mr_shell(cx);
+    let mut mr = sample_mr();
+    mr.iid = 247;
+    if let Some(p) = mr.head_pipeline.as_mut() {
+        p.id = 99001;
+        p.status = "running".into();
+    }
+
+    cx.update_window(window, |_, _, cx| {
+        let state = shell.read(cx).state().clone();
+        let proj = state.read(cx).projects[0].clone();
+        state.update(cx, |s, cx| s.select_project_on_screen(proj, Screen::MergeRequests, cx));
+    })
+    .unwrap();
+    cx.run_until_parked();
+
+    cx.update_window(window, |_, win, cx| {
+        let state = shell.read(cx).state().clone();
+        let mrs_view = shell.read(cx).mrs_view().clone();
+        mrs_view.update(cx, |v, cx| {
+            v.set_fixture_data(
+                vec![mr.clone()], MrListCounts::default(), None, vec![], vec![],
+                vec![], vec![], vec![], None, vec![], vec![], cx,
+            );
+        });
+        win.render_frame(cx);
+
+        let ci = win.find("mr-list-ci-247").bounds();
+        let updated = win.find("mr-list-updated-247").bounds();
+        assert!(ci.right() < updated.left());
+        win.click("mr-list-ci-247", cx);
+        assert_eq!(mrs_view.read(cx).selected_iid(), None, "clicking CI pill must not open MR detail");
+        assert_eq!(state.read(cx).screen, Screen::Pipelines, "clicking CI pill should open pipeline view");
     })
     .unwrap();
 }

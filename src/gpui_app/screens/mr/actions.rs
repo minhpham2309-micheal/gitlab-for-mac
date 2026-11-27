@@ -39,7 +39,7 @@ impl MergeRequestsView {
     }
 
     pub(crate) fn reset_state(&mut self, cx: &mut Context<Self>) {
-        (self.list_task, self.counts_task, self.members_task) = (None, None, None);
+        (self.list_task, self.counts_task, self.pipelines_hydrate_task, self.members_task) = (None, None, None, None);
         self.mrs.clear();
         self.project_members.clear();
         (self.members_loading, self.members_loaded) = (false, false);
@@ -87,6 +87,7 @@ impl MergeRequestsView {
             per_page: self.per_page,
         };
         self.list_loading = true;
+        self.pipelines_hydrate_task = None;
         self.state.update(cx, |s, cx| { s.busy = true; s.set_status("Loading merge requests…", cx); });
 
         let c_counts = client.clone();
@@ -124,6 +125,7 @@ impl MergeRequestsView {
                             view.select_mr(found, false, cx);
                             return;
                         }
+                        view.hydrate_list_pipelines(cx);
                     }
                     Ok(Err(err)) | Err(err) => view.state.update(cx, |s, cx| s.set_status(err, cx)),
                 }
@@ -136,6 +138,7 @@ impl MergeRequestsView {
         self.clear_detail(cx);
         self.state.update(cx, |s, cx| s.record_mr_list(cx));
         self.sync_summary(cx);
+        self.hydrate_list_pipelines(cx);
         cx.notify();
     }
 
@@ -143,6 +146,7 @@ impl MergeRequestsView {
         if self.selected.is_some() {
             self.clear_detail(cx);
             self.sync_summary(cx);
+            self.hydrate_list_pipelines(cx);
             cx.notify();
         }
     }

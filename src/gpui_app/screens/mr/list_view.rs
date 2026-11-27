@@ -146,6 +146,7 @@ pub fn render_mr_list_view(
     let mrs = view.mrs.clone();
     let client_owned = client.cloned();
     let row_weak = cx.entity().downgrade();
+    let app_state = view.state.clone();
     let list_body = if view.list_loading && mrs.is_empty() {
         div().py_12().flex().items_center().justify_center().text_sm().text_color(theme.muted_foreground)
             .child("Loading merge requests…").into_any_element()
@@ -155,7 +156,7 @@ pub fn render_mr_list_view(
     } else {
         uniform_list("mr-uniform-list", mrs.len(), move |range, _, cx| {
             range
-                .map(|ix| render_mr_list_row(&mrs[ix], client_owned.as_ref(), row_weak.clone(), cx))
+                .map(|ix| render_mr_list_row(&mrs[ix], client_owned.as_ref(), row_weak.clone(), app_state.clone(), cx))
                 .collect()
         })
         .with_sizing_behavior(ListSizingBehavior::Infer)
