@@ -141,8 +141,8 @@ pub fn render_mr_changes(
     h_resizable("mr-changes-split")
         .child(
             resizable_panel()
-                .size(px(230.))
-                .size_range(px(160.)..px(420.))
+                .size(px(300.))
+                .size_range(px(200.)..px(460.))
                 .child(file_tree),
         )
         .child(

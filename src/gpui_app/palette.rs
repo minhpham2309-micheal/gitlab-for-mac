@@ -61,7 +61,7 @@ pub fn render_palette_overlay<F: Fn(&mut Window, &mut App) + Clone + 'static>(
         .item(nav_item("Branches", Icon::empty().path("icons/glab-branch.svg"), &["git", "refs"], no_proj, GoBranches))
         .item(nav_item("Tags", Icon::empty().path("icons/glab-tag.svg"), &["git", "refs"], no_proj, GoTags))
         .item(nav_item("Commits", Icon::new(IconName::FileText), &["history", "log"], no_proj, GoCommits))
-        .item(nav_item("Issues", Icon::empty().path("icons/glab-issue.svg"), &["plan"], no_proj, GoIssues))
+        .item(nav_item("Work items", Icon::empty().path("icons/glab-issue.svg"), &["plan", "issues"], no_proj, GoIssues))
         .item(nav_item("Releases", Icon::empty().path("icons/glab-tag.svg"), &["tags"], no_proj, GoReleases))
         .item(nav_item("Pipeline schedules", Icon::new(IconName::Calendar), &["cron"], no_proj, GoSchedules))
         .item(nav_item("Runners", Icon::new(IconName::Cpu), &[], no_proj, GoRunners))

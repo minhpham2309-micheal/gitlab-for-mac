@@ -1,9 +1,10 @@
 use gpui_kit::{
+    base::StyledExt as _,
     component::{
         button::{Button, ButtonVariants as _},
         ActiveTheme as _, Disableable as _, Icon, IconName, Sizable as _,
     },
-    div, px, Context, InteractiveElement as _, IntoElement, ParentElement as _, SharedString,
+    div, px, rgb, Context, InteractiveElement as _, IntoElement, ParentElement as _, SharedString,
     StatefulInteractiveElement as _, Styled as _, TestSupportExt as _,
 };
 
@@ -135,35 +136,26 @@ pub fn render_stage_graph(
         .items_start()
         .gap(row_gap);
 
+    let stage_body_bg: gpui_kit::Hsla = if dark { rgb(0x1E1E20).into() } else { theme.background };
     for (idx, col) in columns.into_iter().enumerate() {
-        let mut col_el = div()
-            .id(SharedString::from(format!("stage-col-{idx}")))
-            .w(col_w)
-            .flex_shrink_0()
-            .rounded_lg()
-            .border_1()
-            .border_color(border)
-            .bg(card_bg)
-            .p(col_pad)
-            .flex()
-            .flex_col()
-            .gap(col_gap)
-            .child(
-                div()
-                    .px_1p5()
-                    .pb_1p5()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .text_size(hdr_font)
-                    .child(div().text_color(fg).truncate().child(col.name))
-                    .child(div().text_color(muted).child(format!("{}", col.cards.len()))),
-            )
-            .test_support();
-
+        let job_n = col.cards.len();
+        let mut jobs_wrap = div().p(col_pad).bg(stage_body_bg).flex().flex_col().gap(col_gap);
         for card in col.cards {
-            col_el = col_el.child(render_job_card(card, selected_job_id, dark, scale, can_run_ci, cx));
+            jobs_wrap = jobs_wrap.child(render_job_card(card, selected_job_id, dark, scale, can_run_ci, cx));
         }
+
+        let col_el = div()
+            .id(SharedString::from(format!("stage-col-{idx}")))
+            .w(col_w).flex_shrink_0().rounded_lg().border_1().border_color(border)
+            .overflow_hidden().flex().flex_col()
+            .child(
+                div().px_3().py_2().bg(card_bg).border_b_1().border_color(border)
+                    .flex().items_center().justify_between().text_size(hdr_font)
+                    .child(div().font_semibold().text_color(fg).truncate().child(col.name))
+                    .child(div().text_color(muted).child(format!("{job_n}"))),
+            )
+            .child(jobs_wrap)
+            .test_support();
 
         row = row.child(col_el);
         if idx + 1 < col_count {

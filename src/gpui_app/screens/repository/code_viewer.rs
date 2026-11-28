@@ -19,7 +19,7 @@ pub fn render_code_body(
     view: &RepositoryView,
     md_ctx: MarkdownProjectContext,
     cx: &mut Context<RepositoryView>,
-) -> impl IntoElement {
+) -> impl IntoElement + use<> {
     let theme = cx.theme();
     if view.blob_loading {
         return div()

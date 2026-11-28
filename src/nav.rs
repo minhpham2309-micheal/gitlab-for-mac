@@ -38,7 +38,7 @@ impl Screen {
             Screen::Branches => "Branches",
             Screen::Tags => "Tags",
             Screen::Commits => "Commits",
-            Screen::Issues => "Issues",
+            Screen::Issues => "Work items",
             Screen::Todos => "To-Do List",
             Screen::Releases => "Releases",
             Screen::Schedules => "Pipeline schedules",

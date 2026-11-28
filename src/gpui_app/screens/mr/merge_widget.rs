@@ -2,7 +2,6 @@ use gpui_kit::{
     base::StyledExt as _,
     component::{
         button::{Button, ButtonVariants as _},
-        checkbox::Checkbox,
         input::Textarea,
         ActiveTheme as _, Icon, IconName, Sizable as _,
     },
@@ -163,16 +162,28 @@ pub fn render_merge_widget(
         }
 
         if perms.can_merge {
+            let opt_box = |id: &'static str, lbl: &'static str, checked: bool| {
+                div().id(id).cursor_pointer().flex().items_center().gap_1p5().text_xs().text_color(theme.foreground)
+                    .child(
+                        div().size(px(15.)).rounded(px(3.)).flex_shrink_0()
+                            .border_1().border_color(if checked { theme.primary } else { theme.input })
+                            .bg(if checked { theme.primary } else { theme.background })
+                            .flex().items_center().justify_center()
+                            .children(checked.then(|| Icon::new(IconName::Check).size(px(10.)).text_color(theme.primary_foreground))),
+                    )
+                    .child(lbl)
+                    .test_support()
+            };
             controls = controls
                 .child(
                     div().id("mr-merge-options").flex().items_center().flex_wrap().gap_4()
-                        .child(Checkbox::new(SharedString::from("mr-opt-del-branch")).label("Delete source branch").checked(view.remove_source_branch)
-                            .on_click(cx.listener(|this, checked: &bool, _, cx| { this.remove_source_branch = *checked; cx.notify(); })))
-                        .child(Checkbox::new(SharedString::from("mr-opt-squash")).label("Squash commits").checked(view.squash_commits)
-                            .on_click(cx.listener(|this, checked: &bool, _, cx| { this.squash_commits = *checked; cx.notify(); })))
-                        .child(Checkbox::new(SharedString::from("mr-opt-edit-msg")).label("Edit commit message").checked(view.edit_commit_msg)
-                            .on_click(cx.listener(|this, checked: &bool, _, cx| {
-                                this.edit_commit_msg = *checked;
+                        .child(opt_box("mr-opt-del-branch", "Delete source branch", view.remove_source_branch)
+                            .on_click(cx.listener(|this, _, _, cx| { this.remove_source_branch = !this.remove_source_branch; cx.notify(); })))
+                        .child(opt_box("mr-opt-squash", "Squash commits", view.squash_commits)
+                            .on_click(cx.listener(|this, _, _, cx| { this.squash_commits = !this.squash_commits; cx.notify(); })))
+                        .child(opt_box("mr-opt-edit-msg", "Edit commit message", view.edit_commit_msg)
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.edit_commit_msg = !this.edit_commit_msg;
                                 this.overview_list.remeasure_items(1..2);
                                 cx.notify();
                             })))

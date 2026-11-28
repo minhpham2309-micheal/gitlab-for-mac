@@ -125,8 +125,7 @@ pub fn render_repo_toolbar(
     let code_btn = Button::new("ov-code-btn")
         .primary()
         .small()
-        .label("Code")
-        .icon(Icon::new(IconName::ChevronDown).size_3())
+        .label("Code ▾")
         .dropdown_menu(move |mut menu, _, _| {
             if let Some(ssh) = ssh_url.clone() {
                 let st = state_copy.clone();

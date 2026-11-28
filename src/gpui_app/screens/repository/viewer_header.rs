@@ -134,7 +134,7 @@ pub fn render_viewer_header(view: &RepositoryView, cx: &mut Context<RepositoryVi
                         copy_state.update(cx, |s, cx| s.set_status("Copied file path", cx));
                     })
                 }))
-                .children(has_file.then(|| {
+                .children((has_file && view.file_last_commit.is_none()).then(|| {
                     Button::new("repo-file-history").outline().xsmall().label("History").on_click(move |_, _, cx| {
                         hist_state.update(cx, |s, cx| s.open_commit_history(Some(hist_ref.clone()), Some(hist_path.clone()), cx));
                     })

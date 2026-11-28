@@ -126,9 +126,10 @@ pub fn render_top_bar_right(state: &Entity<AppState>, cx: &mut App) -> impl Into
     let avatar_el = render_avatar(user_avatar.as_deref(), &user_label, px(24.), client.as_ref(), cx);
     let avatar_btn = Button::new("topbar-user-avatar")
         .ghost()
-        .xsmall()
+        .rounded(px(999.))
         .p_0()
-        .rounded_full()
+        .w(px(26.))
+        .h(px(26.))
         .child(avatar_el)
         .dropdown_menu(move |menu, _, _| {
             let st_pref = account_state.clone();

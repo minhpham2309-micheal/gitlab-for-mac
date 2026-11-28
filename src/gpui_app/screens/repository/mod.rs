@@ -12,6 +12,7 @@ use gpui_kit::{
     component::{
         input::{EditorState, InputEvent, InputState},
         resizable::{h_resizable, resizable_panel},
+        ActiveTheme as _,
     },
     div, px, AppContext as _, Context, Entity, Image, IntoElement, ParentElement as _, Render,
     Styled as _, Subscription, Task, Window,
@@ -179,7 +180,15 @@ impl Render for RepositoryView {
         let md_ctx = MarkdownProjectContext::from_state(self.state.read(cx), cx);
         let header = render_viewer_header(self, cx);
         let body = render_code_body(self, md_ctx, cx);
-        let right = div().size_full().flex().flex_col().child(header).child(div().flex_1().min_h_0().child(body));
+        let border = cx.theme().border;
+        let bg = cx.theme().background;
+        let body_wrap = if self.active_path.is_some() {
+            div().flex_1().min_h_0().mx_3().mb_3().rounded_b_md().border_x_1().border_b_1()
+                .border_color(border).bg(bg).overflow_hidden().child(body)
+        } else {
+            div().flex_1().min_h_0().child(body)
+        };
+        let right = div().size_full().flex().flex_col().child(header).child(body_wrap);
         if !self.show_tree { return right.into_any_element(); }
         let tree = render_tree_panel(self, cx);
         h_resizable("repo-source-split")
