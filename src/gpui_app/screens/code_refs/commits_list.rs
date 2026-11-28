@@ -1,9 +1,10 @@
+use std::sync::Arc;
+
 use gpui_kit::{
     base::StyledExt as _,
     component::{
         button::{Button, ButtonVariants as _},
         input::Input,
-        menu::{DropdownMenu as _, PopupMenuItem},
         ActiveTheme as _, Icon, IconName, Sizable as _,
     },
     div, px, ClipboardItem, Context, InteractiveElement as _, IntoElement, ParentElement as _,
@@ -15,6 +16,7 @@ use crate::gitlab::{group_commits_by_date, RepoCommit};
 
 use super::super::super::avatar::render_avatar;
 use super::super::super::pajamas_theme::{status_color, status_icon_path};
+use super::super::super::ref_switcher::{render_ref_switcher, RefSwitcherProps};
 use super::commits::CommitsView;
 
 fn filtered_commits(view: &CommitsView, cx: &Context<CommitsView>) -> Vec<RepoCommit> {
@@ -31,20 +33,27 @@ fn commit_pipeline(view: &CommitsView, c: &RepoCommit) -> Option<(u64, String)> 
 }
 
 fn render_ref_picker(view: &CommitsView, id: &'static str, cx: &mut Context<CommitsView>) -> impl IntoElement + use<> {
-    let (git_ref, branches, weak) = (view.git_ref.clone(), view.branches.clone(), cx.entity().downgrade());
-    let btn = Button::new(id).outline().small()
-        .icon(Icon::empty().path("icons/glab-branch.svg").size_3p5().text_color(cx.theme().muted_foreground))
-        .label(format!("{git_ref} ▾"));
-    if branches.is_empty() { return btn.into_any_element(); }
-    btn.dropdown_menu(move |mut menu, _, _| {
-        for b in &branches {
-            let (name, w) = (b.name.clone(), weak.clone());
-            menu = menu.item(PopupMenuItem::new(name.clone()).checked(name == git_ref).on_click(move |_, _, cx| {
-                let _ = w.update(cx, |v, cx| v.switch_ref(name.clone(), cx));
-            }));
-        }
-        menu
-    }).into_any_element()
+    let weak = cx.entity().downgrade();
+    let st_copy = view.state.clone();
+    let def_branch = view.state.read(cx).project.as_ref().and_then(|p| p.default_branch.clone());
+    render_ref_switcher(
+        RefSwitcherProps {
+            id_prefix: id,
+            trigger_id: id,
+            current_ref: &view.git_ref,
+            default_branch: def_branch.as_deref(),
+            branches: &view.branches,
+            tags: &view.tags,
+            state: &view.ref_switcher,
+            on_select: Arc::new(move |name, _, cx| {
+                let _ = weak.update(cx, |v, cx| v.switch_ref(name, cx));
+            }),
+            on_copy: Some(Arc::new(move |name, cx| {
+                st_copy.update(cx, |s, cx| s.set_status(format!("Copied ref {name}"), cx));
+            })),
+        },
+        cx,
+    )
 }
 
 fn render_path_chip(view: &CommitsView, cx: &mut Context<CommitsView>) -> Option<impl IntoElement + use<>> {

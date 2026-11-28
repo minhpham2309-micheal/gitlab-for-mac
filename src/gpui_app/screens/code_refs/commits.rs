@@ -15,18 +15,21 @@ use crate::nav::Screen;
 use crate::runtime::spawn_tokio;
 
 use super::super::super::diff_hl::{new_diff_state, parse_raw_diffs_individually};
+use super::super::super::ref_switcher::RefSwitcherState;
 use super::super::super::state::{AppEvent, AppState, ScreenCommand};
 use super::commit_diff::render_commit_diff_pane;
 use super::commits_list::{render_commits_split_list, render_commits_timeline_view};
 
 pub struct CommitsView {
     pub(super) state: Entity<AppState>,
+    pub(super) ref_switcher: RefSwitcherState,
     pub(super) filter_input: Entity<InputState>,
     pub(super) diff_state: Entity<DiffState>,
     pub(super) git_ref: String,
     pub(super) path_filter: Option<String>,
     pub(super) commits: Vec<RepoCommit>,
     pub(super) branches: Vec<Branch>,
+    pub(super) tags: Vec<RepoTag>,
     pub(super) sha_pipelines: HashMap<String, (u64, String)>,
     pub(super) sha_tags: HashMap<String, Vec<String>>,
     pub(super) selected_sha: Option<String>,
@@ -46,13 +49,18 @@ pub struct CommitsView {
 impl CommitsView {
     pub fn new(state: Entity<AppState>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let mode = if state.read(cx).prefs.default_diff_split { DiffMode::Split } else { DiffMode::Unified };
+        let ref_switcher = RefSwitcherState::new(window, cx);
         let filter_input = cx.new(|cx| InputState::new(window, cx).placeholder("Search or filter results…"));
         let diff_state = cx.new(|cx| new_diff_state(Vec::new(), mode, cx));
+        let sub_ref = cx.subscribe_in(&ref_switcher.search_input, window, |_, _, ev: &InputEvent, _, cx| {
+            if matches!(ev, InputEvent::Change) { cx.notify(); }
+        });
         let sub_in = cx.subscribe_in(&filter_input, window, |_, _, ev: &InputEvent, _, cx| {
             if matches!(ev, InputEvent::Change) { cx.notify(); }
         });
-        let sub_st = cx.subscribe_in(&state, window, |this, _, ev: &AppEvent, _, cx| match ev {
+        let sub_st = cx.subscribe_in(&state, window, |this, _, ev: &AppEvent, window, cx| match ev {
             AppEvent::HostChanged { .. } | AppEvent::ProjectChanged { .. } => {
+                this.ref_switcher.reset(window, cx);
                 this.reset(cx);
                 if this.state.read(cx).screen == Screen::Commits { this.load_page(1, false, cx); }
             }
@@ -75,11 +83,11 @@ impl CommitsView {
             _ => {}
         });
         Self {
-            state, filter_input, diff_state, git_ref: "main".into(), path_filter: None,
-            commits: Vec::new(), branches: Vec::new(), sha_pipelines: HashMap::new(), sha_tags: HashMap::new(),
-            selected_sha: None, split_mode: false, page: 1, loading: false, diff_loading: false,
-            diff_error: None, fallback_notices: Vec::new(), has_truncated: false, raw_diff_count: 0,
-            list_task: None, diff_task: None, _subs: vec![sub_in, sub_st],
+            state, ref_switcher, filter_input, diff_state, git_ref: "main".into(), path_filter: None,
+            commits: Vec::new(), branches: Vec::new(), tags: Vec::new(), sha_pipelines: HashMap::new(),
+            sha_tags: HashMap::new(), selected_sha: None, split_mode: false, page: 1, loading: false,
+            diff_loading: false, diff_error: None, fallback_notices: Vec::new(), has_truncated: false,
+            raw_diff_count: 0, list_task: None, diff_task: None, _subs: vec![sub_in, sub_st, sub_ref],
         }
     }
 
@@ -106,6 +114,7 @@ impl CommitsView {
     ) {
         self.branches = branches;
         self.sha_tags = tags_by_commit_sha(&tags);
+        self.tags = tags;
         self.sha_pipelines.clear();
         for p in pipelines { self.sha_pipelines.entry(p.sha).or_insert((p.id, p.status)); }
         cx.notify();
@@ -130,10 +139,7 @@ impl CommitsView {
             (None, None, None, false, 1, false);
         self.git_ref = self.state.read(cx).project.as_ref()
             .and_then(|p| p.default_branch.clone()).filter(|s| !s.is_empty()).unwrap_or_else(|| "main".into());
-        self.commits.clear();
-        self.branches.clear();
-        self.sha_pipelines.clear();
-        self.sha_tags.clear();
+        self.commits.clear(); self.branches.clear(); self.tags.clear(); self.sha_pipelines.clear(); self.sha_tags.clear();
         self.clear_diff(cx);
         cx.notify();
     }
@@ -141,24 +147,19 @@ impl CommitsView {
     pub(super) fn switch_ref(&mut self, next_ref: String, cx: &mut Context<Self>) {
         if next_ref.is_empty() || self.git_ref == next_ref { return; }
         (self.git_ref, self.selected_sha) = (next_ref, None);
-        self.clear_diff(cx);
-        self.load_page(1, false, cx);
+        self.clear_diff(cx); self.load_page(1, false, cx);
     }
 
     pub(super) fn close_diff_pane(&mut self, cx: &mut Context<Self>) {
         (self.split_mode, self.selected_sha) = (false, None);
-        self.clear_diff(cx);
-        cx.notify();
+        self.clear_diff(cx); cx.notify();
     }
 
     pub(super) fn toggle_split_mode(&mut self, cx: &mut Context<Self>) {
         self.split_mode = !self.split_mode;
         if self.split_mode && self.selected_sha.is_none()
             && let Some(first) = self.commits.first().map(|c| c.id.clone())
-        {
-            self.select_commit(first, cx);
-            return;
-        }
+        { self.select_commit(first, cx); return; }
         cx.notify();
     }
 
@@ -187,7 +188,7 @@ impl CommitsView {
                         if !items.is_empty() || !append { v.page = page; }
                         if append { v.commits.extend(items); } else { v.commits = items; }
                         if let Some((pipes, tags, branches)) = meta {
-                            (v.branches, v.sha_tags) = (branches, tags_by_commit_sha(&tags));
+                            (v.branches, v.sha_tags, v.tags) = (branches, tags_by_commit_sha(&tags), tags);
                             v.sha_pipelines.clear();
                             for p in pipes { v.sha_pipelines.entry(p.sha).or_insert((p.id, p.status)); }
                         }

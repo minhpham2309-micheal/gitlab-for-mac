@@ -9,6 +9,7 @@ pub mod markdown;
 pub mod nav_history;
 pub mod pajamas_theme;
 pub mod palette;
+pub mod ref_switcher;
 pub mod repo_cache;
 pub mod safe_url;
 pub mod screens;
