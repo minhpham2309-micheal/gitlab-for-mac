@@ -7,6 +7,7 @@ use tokio::sync::Semaphore;
 use super::client::GitLab;
 use super::error::{GitLabError, Result};
 use super::types::{Branch, BridgeJob, Job, Pipeline, PipelineTestSummary};
+use super::types_ci::PipelineDetail;
 
 const MAX_MR_PIPELINE_FALLBACKS: usize = 25;
 const MR_PIPELINE_CONCURRENCY: usize = 6;
@@ -54,6 +55,11 @@ pub(crate) fn match_pipelines_to_mrs(
 }
 
 impl GitLab {
+    pub async fn pipeline_detail(&self, project_id: u64, pipeline_id: u64) -> Result<PipelineDetail> {
+        self.send(Method::GET, &format!("/projects/{project_id}/pipelines/{pipeline_id}"))
+            .await
+    }
+
     pub async fn pipeline_jobs_all(&self, project_id: u64, pipeline_id: u64) -> Result<Vec<Job>> {
         let path = format!(
             "/projects/{project_id}/pipelines/{pipeline_id}/jobs?include_retried=true&per_page=100"

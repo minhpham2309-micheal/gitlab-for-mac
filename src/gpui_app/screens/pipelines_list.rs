@@ -38,6 +38,13 @@ pub fn render_pipelines_list(
             div()
                 .flex()
                 .gap_1()
+                .child(
+                    Button::new("pipe-layout-toggle")
+                        .ghost()
+                        .xsmall()
+                        .label("Web")
+                        .on_click(cx.listener(|this, _, _, cx| this.toggle_split_mode(cx))),
+                )
                 .children(can_run_ci.then(|| {
                     Button::new("pipe-run")
                         .primary()

@@ -54,10 +54,27 @@ impl PipelinesView {
         bridges: Vec<BridgeJob>,
         cx: &mut Context<Self>,
     ) {
+        self.split_mode = true;
         self.selected_pipeline = pipelines.first().cloned();
         self.pipelines = pipelines;
         self.jobs = jobs;
         self.bridges = bridges;
+        self.sync_summary(cx);
+        cx.notify();
+    }
+
+    pub fn set_fixture_gitlab_pipelines(
+        &mut self,
+        pipelines: Vec<Pipeline>,
+        selected: Option<Pipeline>,
+        jobs: Vec<Job>,
+        cx: &mut Context<Self>,
+    ) {
+        self.split_mode = false;
+        self.pipelines = pipelines;
+        self.selected_pipeline = selected;
+        self.jobs = jobs;
+        self.bridges.clear();
         self.sync_summary(cx);
         cx.notify();
     }
@@ -123,7 +140,7 @@ pub fn render_stage_graph(
             .id(SharedString::from(format!("stage-col-{idx}")))
             .w(col_w)
             .flex_shrink_0()
-            .rounded_md()
+            .rounded_lg()
             .border_1()
             .border_color(border)
             .bg(card_bg)
@@ -133,10 +150,8 @@ pub fn render_stage_graph(
             .gap(col_gap)
             .child(
                 div()
-                    .px_1()
-                    .pb_1()
-                    .border_b_1()
-                    .border_color(border.opacity(0.6))
+                    .px_1p5()
+                    .pb_1p5()
                     .flex()
                     .items_center()
                     .justify_between()

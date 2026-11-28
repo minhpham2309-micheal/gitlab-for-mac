@@ -38,6 +38,7 @@ mod system_notes;
 pub mod time_util;
 mod trace_util;
 mod types;
+mod types_ci;
 mod types_group;
 mod types_mr;
 mod types_project;
@@ -56,6 +57,7 @@ pub use permissions::{
     ACCESS_PLANNER, ACCESS_REPORTER,
 };
 pub use types::*;
+pub use types_ci::*;
 pub use types_group::*;
 pub use types_project::*;
 pub use types_repo::*;

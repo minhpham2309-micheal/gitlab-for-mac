@@ -22,6 +22,7 @@ pub fn render_job_log_header(
     wrap_lines: bool,
     has_selection: bool,
     can_run_ci: bool,
+    closable: bool,
     cx: &mut Context<PipelinesView>,
 ) -> impl IntoElement + use<> {
     let theme = cx.theme();
@@ -144,7 +145,14 @@ pub fn render_job_log_header(
                         .on_click(move |_, _, _| {
                             let _ = safe_open_url(&web_url);
                         }),
-                ),
+                )
+                .children(closable.then(|| {
+                    Button::new("log-close-drawer")
+                        .ghost()
+                        .xsmall()
+                        .label("×")
+                        .on_click(cx.listener(|this, _, _, cx| this.close_job_log(cx)))
+                })),
         )
 }
 

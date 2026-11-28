@@ -101,18 +101,18 @@ pub fn render_job_card(
         .id(SharedString::from(format!("job-card-{job_id}")))
         .px(pad_x)
         .py(pad_y)
-        .rounded_md()
+        .rounded_lg()
         .cursor_pointer()
         .border_1()
         .border_color(if is_selected {
             theme.primary
         } else {
-            theme.border.opacity(0.7)
+            theme.border.opacity(0.85)
         })
         .bg(if is_selected {
             theme.list_active
         } else {
-            theme.colors.list
+            theme.background
         })
         .hover(|s| s.bg(theme.list_hover))
         .flex()
