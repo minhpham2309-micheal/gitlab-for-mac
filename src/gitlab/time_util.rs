@@ -5,6 +5,18 @@ const MONTHS: [&str; 12] = [
     "July", "August", "September", "October", "November", "December",
 ];
 
+const SHORT_MONTHS: [&str; 12] = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+pub fn now_unix_secs() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
 fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
     let y = y - i64::from(m <= 2);
     let era = y.div_euclid(400);
@@ -60,14 +72,23 @@ pub fn format_relative_from(iso: &str, now_secs: i64) -> String {
 }
 
 pub fn format_relative(iso: &str) -> String {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
-    format_relative_from(iso, now)
+    format_relative_from(iso, now_unix_secs())
 }
 
-pub fn format_long_date(iso: &str) -> String {
+pub fn iso_date_key(iso: &str) -> Option<&str> {
+    let s = iso.trim();
+    let b = s.as_bytes();
+    if b.len() < 10 || b[4] != b'-' || b[7] != b'-' {
+        return None;
+    }
+    let key = s.get(0..10)?;
+    let _y: u32 = key.get(0..4)?.parse().ok()?;
+    let m: u32 = key.get(5..7)?.parse().ok()?;
+    let d: u32 = key.get(8..10)?.parse().ok()?;
+    ((1..=12).contains(&m) && (1..=31).contains(&d)).then_some(key)
+}
+
+fn format_date_with(iso: &str, months: &[&str; 12]) -> String {
     let s = iso.trim();
     let fallback = || s.chars().take(10).collect::<String>();
     let (Some(ys), Some(ms), Some(ds)) = (s.get(0..4), s.get(5..7), s.get(8..10)) else {
@@ -76,10 +97,18 @@ pub fn format_long_date(iso: &str) -> String {
     let (Ok(y), Ok(m), Ok(d)) = (ys.parse::<u32>(), ms.parse::<usize>(), ds.parse::<u32>()) else {
         return fallback();
     };
-    match MONTHS.get(m.wrapping_sub(1)) {
+    match months.get(m.wrapping_sub(1)) {
         Some(month) => format!("{month} {d}, {y}"),
         None => fallback(),
     }
+}
+
+pub fn format_long_date(iso: &str) -> String {
+    format_date_with(iso, &MONTHS)
+}
+
+pub fn format_short_date(iso: &str) -> String {
+    format_date_with(iso, &SHORT_MONTHS)
 }
 
 #[cfg(test)]
@@ -93,7 +122,11 @@ mod tests {
         assert_eq!(format_relative_from("2026-04-05T12:00:00Z", base), "5 days ago");
         assert_eq!(format_relative_from("2026-04-02T12:00:00Z", base), "1 week ago");
         assert_eq!(format_long_date("2026-04-10T08:15:00.000Z"), "April 10, 2026");
+        assert_eq!(format_short_date("2026-11-26T08:15:00.000Z"), "Nov 26, 2026");
+        assert_eq!(iso_date_key("2026-11-26T08:15:00Z"), Some("2026-11-26"));
+        assert_eq!(iso_date_key("invalid"), None);
         // Must never panic on non-ASCII strings crossing byte offsets 4/7/10.
         assert_eq!(format_long_date("ngày-tháng-năm"), "ngày-tháng");
+        assert_eq!(format_short_date("ngày-tháng-năm"), "ngày-tháng");
     }
 }

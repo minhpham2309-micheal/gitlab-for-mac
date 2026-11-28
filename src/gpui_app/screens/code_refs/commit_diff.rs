@@ -55,7 +55,11 @@ pub fn render_commit_diff_pane(view: &CommitsView, cx: &mut Context<CommitsView>
                         .children(web.map(|u| {
                             Button::new("commit-open-web").ghost().xsmall().icon(Icon::new(IconName::ExternalLink).size_3p5())
                                 .on_click(move |_, _, _| { let _ = safe_open_url(&u); })
-                        })),
+                        }))
+                        .child(
+                            Button::new("commit-close-diff").ghost().xsmall().icon(Icon::new(IconName::Close).size_3p5())
+                                .on_click(cx.listener(|v, _, _, cx| v.close_diff_pane(cx))),
+                        ),
                 ),
         )
         .child(div().text_xs().text_color(theme.muted_foreground).child(author_line))

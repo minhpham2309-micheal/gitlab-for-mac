@@ -102,18 +102,42 @@ impl RepoCommit {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct RepoTagCommit {
+    #[serde(default)]
     pub id: String,
     #[serde(default)]
     pub short_id: String,
     #[serde(default)]
     pub title: String,
     #[serde(default)]
+    pub author_name: String,
+    #[serde(default)]
+    pub authored_date: Option<String>,
+    #[serde(default)]
+    pub committed_date: Option<String>,
+    #[serde(default)]
     pub created_at: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+impl RepoTagCommit {
+    pub fn display_short_id(&self) -> &str {
+        if !self.short_id.is_empty() {
+            &self.short_id
+        } else {
+            self.id.get(..8).unwrap_or(&self.id)
+        }
+    }
+
+    pub fn timestamp(&self) -> Option<&str> {
+        self.committed_date
+            .as_deref()
+            .or(self.authored_date.as_deref())
+            .or(self.created_at.as_deref())
+    }
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct RepoTagRelease {
     #[serde(default)]
     pub tag_name: String,
@@ -121,7 +145,7 @@ pub struct RepoTagRelease {
     pub description: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct RepoTag {
     pub name: String,
     #[serde(default)]
@@ -129,9 +153,17 @@ pub struct RepoTag {
     #[serde(default)]
     pub target: Option<String>,
     #[serde(default)]
+    pub protected: bool,
+    #[serde(default)]
     pub commit: Option<RepoTagCommit>,
     #[serde(default)]
     pub release: Option<RepoTagRelease>,
+}
+
+impl RepoTag {
+    pub fn timestamp(&self) -> Option<&str> {
+        self.commit.as_ref().and_then(|c| c.timestamp())
+    }
 }
 
 #[derive(Debug, Clone)]

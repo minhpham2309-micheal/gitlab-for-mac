@@ -132,13 +132,58 @@ pub struct ReleaseLinks {
     pub self_url: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+pub struct BranchCommit {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub short_id: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub author_name: String,
+    #[serde(default)]
+    pub authored_date: Option<String>,
+    #[serde(default)]
+    pub committed_date: Option<String>,
+    #[serde(default)]
+    pub created_at: Option<String>,
+    #[serde(default)]
+    pub web_url: Option<String>,
+}
+
+impl BranchCommit {
+    pub fn display_short_id(&self) -> &str {
+        if !self.short_id.is_empty() {
+            &self.short_id
+        } else {
+            self.id.get(..8).unwrap_or(&self.id)
+        }
+    }
+
+    pub fn timestamp(&self) -> Option<&str> {
+        self.committed_date
+            .as_deref()
+            .or(self.authored_date.as_deref())
+            .or(self.created_at.as_deref())
+    }
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct Branch {
     pub name: String,
     #[serde(default)]
     pub default: bool,
     #[serde(default)]
     pub protected: bool,
+    #[serde(default)]
+    pub merged: bool,
+    #[serde(default)]
+    pub can_push: bool,
+    #[serde(default)]
+    pub web_url: Option<String>,
+    #[serde(default)]
+    pub commit: Option<BranchCommit>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

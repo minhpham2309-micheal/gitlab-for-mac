@@ -13,9 +13,9 @@ pub use super::types_mr::{
     MrListCounts, MrListQuery, MrPage, MrSortField, SortDir, TimeStats,
 };
 pub use super::types_review::{
-    Branch, BridgeJob, DiffPosition, DiffRefs, Discussion, DiscussionNote, IssueFilter,
-    PipelineTestSummary, PipelineTestTotals, RawTraceChunk, ReleaseLinks, TestSuiteSummary,
-    TodoProject, TodoTarget,
+    Branch, BranchCommit, BridgeJob, DiffPosition, DiffRefs, Discussion, DiscussionNote,
+    IssueFilter, PipelineTestSummary, PipelineTestTotals, RawTraceChunk, ReleaseLinks,
+    TestSuiteSummary, TodoProject, TodoTarget,
 };
 
 #[derive(Debug, Clone, Deserialize)]

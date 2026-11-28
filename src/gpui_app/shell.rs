@@ -113,6 +113,8 @@ impl AppShell {
     pub fn overview_view(&self) -> &Entity<ProjectOverviewView> { &self.overview_view }
     pub fn groups_view(&self) -> &Entity<GroupsView> { &self.groups_view }
     pub fn commits_view(&self) -> &Entity<CommitsView> { &self.commits_view }
+    pub fn branches_view(&self) -> &Entity<BranchesView> { &self.branches_view }
+    pub fn tags_view(&self) -> &Entity<TagsView> { &self.tags_view }
 
     pub(crate) fn toggle_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.palette_open = !self.palette_open;
