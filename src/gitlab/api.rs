@@ -163,7 +163,12 @@ impl GitLab {
     }
 
     pub async fn todos(&self) -> Result<Vec<Todo>> {
-        self.send(Method::GET, "/todos?per_page=40").await
+        self.todos_by_state("pending").await
+    }
+
+    pub async fn todos_by_state(&self, state: &str) -> Result<Vec<Todo>> {
+        self.send(Method::GET, &format!("/todos?state={}&per_page=40", urlencoding::encode(state)))
+            .await
     }
 
     pub async fn mark_todo_done(&self, id: u64) -> Result<()> {

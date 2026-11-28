@@ -8,6 +8,7 @@ gpui_kit::actions!(
         NavBack,
         NavForward,
         GoProjects,
+        GoGroups,
         GoOverview,
         GoRepository,
         GoPipelines,

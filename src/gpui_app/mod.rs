@@ -1,6 +1,7 @@
 pub mod actions;
 pub mod assets;
 pub mod avatar;
+pub mod breadcrumb;
 pub mod confirm;
 pub mod diff_hl;
 pub mod image_cache;
@@ -8,6 +9,7 @@ pub mod markdown;
 pub mod nav_history;
 pub mod pajamas_theme;
 pub mod palette;
+pub mod ref_switcher;
 pub mod repo_cache;
 pub mod safe_url;
 pub mod screens;

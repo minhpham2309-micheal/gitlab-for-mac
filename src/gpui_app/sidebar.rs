@@ -17,6 +17,7 @@ use super::state::AppState;
 fn screen_icon(screen: Screen) -> Icon {
     match screen {
         Screen::Projects => Icon::new(IconName::Folder),
+        Screen::Groups => Icon::new(IconName::FolderOpen),
         Screen::ProjectOverview => Icon::new(IconName::LayoutDashboard),
         Screen::Repository => Icon::new(IconName::FolderClosed),
         Screen::Todos => Icon::empty().path("icons/glab-todo.svg"),
@@ -144,6 +145,7 @@ pub fn render_sidebar(state: &Entity<AppState>, cx: &mut App) -> impl IntoElemen
 
     let mut tools_menu = SidebarMenu::new()
         .child(make_leaf(Screen::Projects, false))
+        .child(make_leaf(Screen::Groups, false))
         .child(make_leaf(Screen::Console, false))
         .child(make_leaf(Screen::Preferences, false));
     if collapsed {

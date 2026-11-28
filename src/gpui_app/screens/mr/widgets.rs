@@ -129,9 +129,9 @@ fn render_approval_widget(
         Some(a) if a.approvals_required > 0 => format!("Requires {} approval(s)", a.approvals_left.max(a.approvals_required)),
         _ => "Approval is optional".into(),
     };
-    let approve_bg: gpui_kit::Hsla = if dark { rgb(0x283E58).into() } else { rgb(0xE9F3FC).into() };
-    let approve_border: gpui_kit::Hsla = if dark { rgb(0x428FDC).into() } else { theme.primary };
-    let approve_fg: gpui_kit::Hsla = if dark { rgb(0x9DC7F1).into() } else { theme.primary };
+    let approve_bg: gpui_kit::Hsla = if dark { rgb(0x383839).into() } else { rgb(0xE9F3FC).into() };
+    let approve_border: gpui_kit::Hsla = if dark { rgb(0x616161).into() } else { theme.primary };
+    let approve_fg: gpui_kit::Hsla = if dark { rgb(0xECECEC).into() } else { theme.primary };
 
     let mut card = div()
         .id("mr-widget-approval")

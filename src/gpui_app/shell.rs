@@ -2,15 +2,17 @@ use gpui_kit::{
     component::{command::CommandState, ActiveTheme as _},
     div, AnyElement, AppContext as _, Context, Entity, FocusHandle, Focusable,
     InteractiveElement as _, IntoElement, ParentElement as _, Render, Styled as _, Subscription,
-    Window,
+    TestSupportExt as _, Window,
 };
 
 use crate::nav::Screen;
 
-use super::pajamas_theme::apply_theme_from_prefs;
+use super::breadcrumb::render_panel_breadcrumb;
+use super::pajamas_theme::{apply_theme_from_prefs, studio_panel_border, studio_shell_bg};
 use super::palette::render_palette_overlay;
 use super::screens::{
     code_refs::{BranchesView, CommitsView, TagsView},
+    groups::GroupsView,
     issues::IssuesView,
     login::LoginView,
     merge_requests::MergeRequestsView,
@@ -36,6 +38,7 @@ pub struct AppShell {
     state: Entity<AppState>,
     command_state: Entity<CommandState>,
     projects_view: Entity<ProjectsView>,
+    groups_view: Entity<GroupsView>,
     overview_view: Entity<ProjectOverviewView>,
     repo_view: Entity<RepositoryView>,
     pipelines_view: Entity<PipelinesView>,
@@ -73,6 +76,7 @@ impl AppShell {
         Self {
             command_state: cx.new(|cx| CommandState::new(window, cx)),
             projects_view: cx.new(|cx| ProjectsView::new(s.clone(), window, cx)),
+            groups_view: cx.new(|cx| GroupsView::new(s.clone(), window, cx)),
             overview_view: cx.new(|cx| ProjectOverviewView::new(s.clone(), window, cx)),
             repo_view: cx.new(|cx| RepositoryView::new(s.clone(), window, cx)),
             pipelines_view: cx.new(|cx| PipelinesView::new(s.clone(), window, cx)),
@@ -107,7 +111,18 @@ impl AppShell {
     pub fn pipelines_view(&self) -> &Entity<PipelinesView> { &self.pipelines_view }
     pub fn repo_view(&self) -> &Entity<RepositoryView> { &self.repo_view }
     pub fn overview_view(&self) -> &Entity<ProjectOverviewView> { &self.overview_view }
+    pub fn groups_view(&self) -> &Entity<GroupsView> { &self.groups_view }
     pub fn commits_view(&self) -> &Entity<CommitsView> { &self.commits_view }
+    pub fn branches_view(&self) -> &Entity<BranchesView> { &self.branches_view }
+    pub fn tags_view(&self) -> &Entity<TagsView> { &self.tags_view }
+    pub fn releases_view(&self) -> &Entity<ReleasesView> { &self.releases_view }
+    pub fn todos_view(&self) -> &Entity<TodosView> { &self.todos_view }
+    pub fn issues_view(&self) -> &Entity<IssuesView> { &self.issues_view }
+    pub fn projects_view(&self) -> &Entity<ProjectsView> { &self.projects_view }
+    pub fn schedules_view(&self) -> &Entity<SchedulesView> { &self.schedules_view }
+    pub fn runners_view(&self) -> &Entity<RunnersView> { &self.runners_view }
+    pub fn search_view(&self) -> &Entity<SearchView> { &self.search_view }
+    pub fn console_view(&self) -> &Entity<ConsoleView> { &self.console_view }
 
     pub(crate) fn toggle_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.palette_open = !self.palette_open;
@@ -149,6 +164,7 @@ impl AppShell {
     fn render_screen_body(&self, cx: &Context<Self>) -> AnyElement {
         match self.state.read(cx).screen {
             Screen::Projects => self.projects_view.clone().into_any_element(),
+            Screen::Groups => self.groups_view.clone().into_any_element(),
             Screen::ProjectOverview => self.overview_view.clone().into_any_element(),
             Screen::Repository => self.repo_view.clone().into_any_element(),
             Screen::Pipelines => self.pipelines_view.clone().into_any_element(),
@@ -170,21 +186,24 @@ impl AppShell {
 
 impl Render for AppShell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme();
+        let dark = cx.theme().is_dark();
+        let panel_bg = cx.theme().background;
+        let fg = cx.theme().foreground;
         let update_modal = self.state.read(cx).update.modal_open.then(|| {
             render_update_modal(&self.state, cx)
         });
         let root = div().id("glab-app-shell").track_focus(&self.focus_handle).relative()
-            .size_full().flex().flex_col().bg(theme.background).text_color(theme.foreground);
+            .size_full().flex().flex_col().bg(studio_shell_bg(dark)).text_color(fg);
 
         if !self.state.read(cx).is_authenticated() {
-            return attach_shell_actions(root, cx)
+            return attach_shell_actions(root.bg(panel_bg), cx)
                 .child(self.login_view.clone())
                 .children(update_modal);
         }
 
         let sidebar = render_sidebar(&self.state, cx);
         let top_bar = render_top_bar(&self.state, window, cx);
+        let panel_breadcrumb = render_panel_breadcrumb(&self.state, cx);
         let status_bar = render_status_bar(self.state.read(cx), cx);
         let shell_weak = cx.entity().downgrade();
         let palette = self.palette_open.then(|| {
@@ -199,12 +218,22 @@ impl Render for AppShell {
             )
         });
 
+        let main_panel = div()
+            .flex_1().min_w_0().min_h_0().pr_2().pb_1p5().flex().flex_col()
+            .child(
+                div()
+                    .id("studio-main-panel")
+                    .flex_1().min_w_0().min_h_0()
+                    .rounded_lg().border_1().border_color(studio_panel_border(dark))
+                    .bg(panel_bg).overflow_hidden().flex().flex_col()
+                    .children(panel_breadcrumb)
+                    .child(div().flex_1().min_w_0().min_h_0().flex().flex_col().child(self.render_screen_body(cx)))
+                    .test_support(),
+            );
+
         attach_shell_actions(root, cx)
             .child(top_bar)
-            .child(
-                div().flex_1().min_h_0().flex().flex_row().child(sidebar)
-                    .child(div().flex_1().min_w_0().min_h_0().flex().flex_col().child(self.render_screen_body(cx))),
-            )
+            .child(div().flex_1().min_h_0().flex().flex_row().child(sidebar).child(main_panel))
             .child(status_bar)
             .child(self.find_file_modal.clone())
             .children(update_modal)

@@ -1,28 +1,11 @@
-mod actions;
-mod activity;
-pub mod annotations;
-mod breadcrumb;
-mod cache;
-mod changes;
-mod changes_chrome;
-mod comments;
-mod commits_tab;
-mod composer;
-mod detail_header;
-mod detail_loader;
-mod discussion_card;
-mod edit_dialog;
-mod list_ci;
-mod list_row;
-mod list_view;
-mod member_picker;
-mod merge_widget;
-mod mutations;
-mod overview;
-mod pipelines_tab;
-mod sidebar;
-mod test_summary_widget;
-mod widgets;
+mod actions; mod activity; pub mod annotations; mod breadcrumb; mod cache;
+mod changes; mod changes_chrome; mod comments; mod commits_tab; mod composer;
+mod detail_header; mod detail_loader; mod discussion_card; mod edit_dialog;
+mod list_ci; mod list_row; mod list_view; mod member_picker; mod merge_widget;
+mod mutations; mod overview; mod pipelines_tab; mod sidebar;
+mod test_summary_widget; mod widgets;
+
+use std::collections::HashSet;
 
 use gpui_kit::{
     component::{
@@ -102,6 +85,10 @@ pub struct MergeRequestsView {
     pub(crate) fallback_notices: Vec<(String, String)>,
     pub(crate) has_truncated: bool,
     pub(crate) diff_state: Entity<DiffState>,
+    pub(crate) diff_filter_input: Entity<InputState>,
+    pub(crate) viewed_files: HashSet<String>,
+    pub(crate) collapsed_diff_dirs: HashSet<String>,
+    pub(crate) diff_tree_mode: bool,
     pub(crate) discussions: Vec<Discussion>,
     pub(crate) discussions_error: Option<String>,
     pub(crate) inline_target: Option<DiffLinePosition>,
@@ -130,7 +117,11 @@ impl MergeRequestsView {
         let reply_input = cx.new(|cx| InputState::new(window, cx).placeholder("Reply…"));
         let inline_input = cx.new(|cx| InputState::new(window, cx).placeholder("Add inline review comment…"));
         let member_filter_input = cx.new(|cx| InputState::new(window, cx).placeholder("Search users…"));
+        let diff_filter_input = cx.new(|cx| InputState::new(window, cx).placeholder("Search (e.g. *.rs)"));
         let sub_member = cx.subscribe_in(&member_filter_input, window, |_, _, ev: &InputEvent, _, cx| {
+            if matches!(ev, InputEvent::Change) { cx.notify(); }
+        });
+        let sub_df = cx.subscribe_in(&diff_filter_input, window, |_, _, ev: &InputEvent, _, cx| {
             if matches!(ev, InputEvent::Change) { cx.notify(); }
         });
         let sub_search = cx.subscribe_in(&search_input, window, |this, _, ev: &InputEvent, _, cx| {
@@ -185,12 +176,13 @@ impl MergeRequestsView {
             participants: Vec::new(), project_members: Vec::new(), members_loading: false,
             members_loaded: false, member_picker: None, member_filter_input, award_emojis: Vec::new(),
             todo_added: false, activity_filter: MrActivityFilter::All, activity_desc: false,
-            raw_diffs: Vec::new(), fallback_notices: Vec::new(), has_truncated: false,
-            diff_state, discussions: Vec::new(), discussions_error: None, inline_target: None,
+            raw_diffs: Vec::new(), fallback_notices: Vec::new(), has_truncated: false, diff_state,
+            diff_filter_input, viewed_files: HashSet::new(), collapsed_diff_dirs: HashSet::new(), diff_tree_mode: true,
+            discussions: Vec::new(), discussions_error: None, inline_target: None,
             replying_to: None, comment_preview: false, comment_input, reply_input, inline_input,
             list_task: None, counts_task: None, pipelines_hydrate_task: None, detail_task: None,
             recheck_task: None, members_task: None, mutation_task: None,
-            _subs: vec![sub_search, sub_member, sub],
+            _subs: vec![sub_search, sub_member, sub_df, sub],
         }
     }
 
@@ -199,6 +191,7 @@ impl MergeRequestsView {
     pub fn selected_mr(&self) -> Option<&MergeRequest> { self.selected.as_ref() }
     pub fn active_tab(&self) -> usize { self.active_tab }
     pub fn filter(&self) -> MrFilter { self.filter }
+    pub fn viewed_file_count(&self) -> usize { self.viewed_files.len() }
 
     pub(crate) fn mr_permissions(&self, mr: &MergeRequest, cx: &gpui_kit::App) -> MrPermissions {
         let st = self.state.read(cx);
@@ -220,13 +213,9 @@ impl Render for MergeRequestsView {
             (st.project.clone(), st.gitlab.clone(), MarkdownProjectContext::from_state(st, cx))
         };
         let Some(project) = project else {
-            return div()
-                .size_full().flex().items_center().justify_center()
-                .text_sm().text_color(cx.theme().muted_foreground)
-                .child("Select a project to view its merge requests")
-                .into_any_element();
+            return div().size_full().flex().items_center().justify_center().text_sm()
+                .text_color(cx.theme().muted_foreground).child("Select a project to view its merge requests").into_any_element();
         };
-
         let breadcrumb = render_mr_breadcrumb(&project, self.selected.as_ref().map(|m| m.iid), &self.state, cx);
         let body = if let Some(mr) = self.selected.clone() {
             let header = render_mr_detail_header(self, &mr, cx);
@@ -237,12 +226,10 @@ impl Render for MergeRequestsView {
                 _ => render_mr_changes(self, &mr, md_ctx, cx).into_any_element(),
             };
             div().flex_1().min_h_0().flex().flex_col().child(header)
-                .child(div().flex_1().min_h_0().flex().flex_col().child(tab_body))
-                .into_any_element()
+                .child(div().flex_1().min_h_0().flex().flex_col().child(tab_body)).into_any_element()
         } else {
             render_mr_list_view(self, &project, client.as_ref(), cx).into_any_element()
         };
-
         div().size_full().flex().flex_col().child(breadcrumb).child(body).into_any_element()
     }
 }

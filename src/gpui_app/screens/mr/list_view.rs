@@ -30,15 +30,18 @@ pub fn render_mr_list_view(
     let bulk_url = format!("{web_base}/-/merge_requests?state={}", view.filter.api_state());
     let list_url = format!("{web_base}/-/merge_requests");
     let copy_url = list_url.clone();
-    let active_tab_border: gpui_kit::Hsla = if dark { rgb(0x63A6E9).into() } else { theme.primary };
-    let badge_bg: gpui_kit::Hsla = if dark { rgb(0xBFBFBF).into() } else { theme.secondary };
-    let badge_fg: gpui_kit::Hsla = if dark { rgb(0x18171D).into() } else { theme.foreground };
-    let primary_cta_bg: gpui_kit::Hsla = if dark { rgb(0x63A6E9).into() } else { theme.primary };
-    let primary_cta_fg: gpui_kit::Hsla = if dark { rgb(0x18171D).into() } else { theme.primary_foreground };
+    let active_tab_border = theme.primary;
+    let active_badge_bg = theme.primary;
+    let active_badge_fg = theme.primary_foreground;
+    let inactive_badge_bg: gpui_kit::Hsla = if dark { rgb(0x383839).into() } else { theme.secondary };
+    let inactive_badge_fg: gpui_kit::Hsla = if dark { rgb(0xBFBFBF).into() } else { theme.muted_foreground };
+    let primary_cta_bg = theme.primary;
+    let primary_cta_fg = theme.primary_foreground;
 
     let tabs = div().flex().items_center().gap_1().children(MrFilter::ALL.into_iter().map(|f| {
         let active = view.filter == f;
         let count = view.counts.for_filter(f).or_else(|| active.then_some(view.mrs.len() as u32));
+        let (badge_bg, badge_fg) = if active { (active_badge_bg, active_badge_fg) } else { (inactive_badge_bg, inactive_badge_fg) };
         div()
             .id(SharedString::from(format!("mr-tab-{}", f.api_state())))
             .px_3().py_2p5().cursor_pointer()

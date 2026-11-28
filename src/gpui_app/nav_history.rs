@@ -25,6 +25,9 @@ pub enum NavTarget {
     MrDetail {
         iid: u64,
     },
+    Group {
+        full_path: Option<String>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

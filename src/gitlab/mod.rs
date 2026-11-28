@@ -3,6 +3,7 @@ mod ansi_palette;
 mod api;
 mod api_ci;
 mod api_discussions;
+mod api_groups;
 mod api_mr;
 mod api_mr_checks;
 mod api_ops;
@@ -37,7 +38,11 @@ mod system_notes;
 pub mod time_util;
 mod trace_util;
 mod types;
+mod types_ci;
+mod types_code_refs;
+mod types_group;
 mod types_mr;
+mod types_ops;
 mod types_project;
 mod types_repo;
 mod types_review;
@@ -54,6 +59,10 @@ pub use permissions::{
     ACCESS_PLANNER, ACCESS_REPORTER,
 };
 pub use types::*;
+pub use types_ci::*;
+pub use types_code_refs::*;
+pub use types_group::*;
+pub use types_ops::*;
 pub use types_project::*;
 pub use types_repo::*;
 

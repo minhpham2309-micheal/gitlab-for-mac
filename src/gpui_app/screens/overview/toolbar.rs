@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use gpui_kit::{
     component::{
         button::{Button, ButtonVariants as _},
@@ -8,8 +10,8 @@ use gpui_kit::{
 };
 
 use crate::gitlab::{Project, ProjectDetail};
-use crate::text_util::ellipsis;
 
+use super::super::super::ref_switcher::{render_ref_switcher, RefSwitcherProps};
 use super::super::super::safe_url::safe_open_url;
 use super::super::super::state::ScreenCommand;
 use super::ProjectOverviewView;
@@ -21,40 +23,30 @@ pub fn render_repo_toolbar(
     cx: &mut Context<ProjectOverviewView>,
 ) -> impl IntoElement + use<> {
     let theme = cx.theme();
-    let current_ref = view.current_ref.clone();
-    let branches: Vec<String> = view.branches.iter().map(|b| b.name.clone()).collect();
-    let tags: Vec<String> = view.tags.iter().map(|t| t.name.clone()).collect();
     let view_weak = cx.entity().downgrade();
+    let state_copy_ref = view.state.clone();
+    let default_branch = detail
+        .and_then(|d| d.default_branch.as_deref())
+        .or(project.default_branch.as_deref());
 
-    let ref_dropdown = Button::new("ov-ref-select")
-        .outline()
-        .small()
-        .icon(Icon::empty().path("icons/glab-branch.svg").size_3p5())
-        .label(ellipsis(&current_ref, 22))
-        .dropdown_menu(move |mut menu, _, _| {
-            for br in branches.iter().take(40) {
-                let name = br.clone();
-                let active = *br == current_ref;
-                let weak = view_weak.clone();
-                menu = menu.item(PopupMenuItem::new(name.clone()).checked(active).on_click(move |_, _, cx| {
-                    let _ = weak.update(cx, |this, cx| this.select_ref(name.clone(), cx));
-                }));
-            }
-            if !tags.is_empty() {
-                menu = menu.separator();
-                for tag in tags.iter().take(25) {
-                    let name = tag.clone();
-                    let active = *tag == current_ref;
-                    let weak = view_weak.clone();
-                    menu = menu.item(
-                        PopupMenuItem::new(format!("tag: {name}")).checked(active).on_click(move |_, _, cx| {
-                            let _ = weak.update(cx, |this, cx| this.select_ref(name.clone(), cx));
-                        }),
-                    );
-                }
-            }
-            menu
-        });
+    let ref_dropdown = render_ref_switcher(
+        RefSwitcherProps {
+            id_prefix: "ov-ref",
+            trigger_id: "ov-ref-select",
+            current_ref: &view.current_ref,
+            default_branch,
+            branches: &view.branches,
+            tags: &view.tags,
+            state: &view.ref_switcher,
+            on_select: Arc::new(move |name, _, cx| {
+                let _ = view_weak.update(cx, |this, cx| this.select_ref(name, cx));
+            }),
+            on_copy: Some(Arc::new(move |name, cx| {
+                state_copy_ref.update(cx, |s, cx| s.set_status(format!("Copied ref {name}"), cx));
+            })),
+        },
+        cx,
+    );
 
     let repo_slug = detail
         .map(|d| d.path.as_str())
@@ -125,8 +117,7 @@ pub fn render_repo_toolbar(
     let code_btn = Button::new("ov-code-btn")
         .primary()
         .small()
-        .label("Code")
-        .icon(Icon::new(IconName::ChevronDown).size_3())
+        .label("Code ▾")
         .dropdown_menu(move |mut menu, _, _| {
             if let Some(ssh) = ssh_url.clone() {
                 let st = state_copy.clone();

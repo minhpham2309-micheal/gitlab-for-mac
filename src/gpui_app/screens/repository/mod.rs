@@ -12,12 +12,13 @@ use gpui_kit::{
     component::{
         input::{EditorState, InputEvent, InputState},
         resizable::{h_resizable, resizable_panel},
+        ActiveTheme as _,
     },
     div, px, AppContext as _, Context, Entity, Image, IntoElement, ParentElement as _, Render,
     Styled as _, Subscription, Task, Window,
 };
 
-use crate::gitlab::{RepoBlob, RepoBlobKind, RepoTreeEntry};
+use crate::gitlab::{RepoBlob, RepoBlobKind, RepoCommit, RepoTreeEntry};
 use crate::nav::Screen;
 
 use super::super::markdown::MarkdownProjectContext;
@@ -33,6 +34,7 @@ pub struct RepositoryView {
     pub(super) active_ref: String,
     pub(super) active_path: Option<String>,
     pub(super) active_blob: Option<RepoBlob>,
+    pub(super) file_last_commit: Option<RepoCommit>,
     pub(super) decoded_image: Option<Arc<Image>>,
     pub(super) blob_loading: bool,
     pub(super) blob_error: Option<String>,
@@ -43,6 +45,7 @@ pub struct RepositoryView {
     pub(super) markdown_preview: bool,
     pub(super) soft_wrap: bool,
     pub(super) blob_task: Option<Task<()>>,
+    pub(super) commit_task: Option<Task<()>>,
     pub(super) dir_tasks: HashMap<String, Task<()>>,
     _subs: Vec<Subscription>,
 }
@@ -85,11 +88,11 @@ impl RepositoryView {
         });
         Self {
             state, editor_state, tree_filter, active_ref: "main".into(),
-            active_path: None, active_blob: None, decoded_image: None,
+            active_path: None, active_blob: None, file_last_commit: None, decoded_image: None,
             blob_loading: false, blob_error: None, blob_seq: 1,
             dirs: HashMap::new(), expanded_dirs: HashSet::new(),
             show_tree: true, markdown_preview: true, soft_wrap: false,
-            blob_task: None, dir_tasks: HashMap::new(), _subs: vec![sub_f, sub_s],
+            blob_task: None, commit_task: None, dir_tasks: HashMap::new(), _subs: vec![sub_f, sub_s],
         }
     }
 
@@ -111,8 +114,13 @@ impl RepositoryView {
         self.apply_blob(&path, blob, line, window, cx);
     }
 
+    pub fn set_fixture_last_commit(&mut self, commit: Option<RepoCommit>, cx: &mut Context<Self>) {
+        self.file_last_commit = commit;
+        cx.notify();
+    }
+
     fn reset_for_project(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.blob_task = None;
+        (self.blob_task, self.commit_task, self.file_last_commit) = (None, None, None);
         self.dir_tasks.clear();
         let st = self.state.read(cx);
         self.active_ref = st.active_ref.clone()
@@ -172,7 +180,15 @@ impl Render for RepositoryView {
         let md_ctx = MarkdownProjectContext::from_state(self.state.read(cx), cx);
         let header = render_viewer_header(self, cx);
         let body = render_code_body(self, md_ctx, cx);
-        let right = div().size_full().flex().flex_col().child(header).child(div().flex_1().min_h_0().child(body));
+        let border = cx.theme().border;
+        let bg = cx.theme().background;
+        let body_wrap = if self.active_path.is_some() {
+            div().flex_1().min_h_0().mx_3().mb_3().rounded_b_md().border_x_1().border_b_1()
+                .border_color(border).bg(bg).overflow_hidden().child(body)
+        } else {
+            div().flex_1().min_h_0().child(body)
+        };
+        let right = div().size_full().flex().flex_col().child(header).child(body_wrap);
         if !self.show_tree { return right.into_any_element(); }
         let tree = render_tree_panel(self, cx);
         h_resizable("repo-source-split")

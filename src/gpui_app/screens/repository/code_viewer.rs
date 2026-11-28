@@ -19,7 +19,7 @@ pub fn render_code_body(
     view: &RepositoryView,
     md_ctx: MarkdownProjectContext,
     cx: &mut Context<RepositoryView>,
-) -> impl IntoElement {
+) -> impl IntoElement + use<> {
     let theme = cx.theme();
     if view.blob_loading {
         return div()
@@ -65,7 +65,7 @@ pub fn render_code_body(
                     .size_full().overflow_y_scroll().p_6()
                     .flex().flex_col().items_center().justify_center().gap_3()
                     .child(
-                        div().p_4().rounded_md().border_1().border_color(theme.border).bg(theme.sidebar)
+                        div().p_4().rounded_md().border_1().border_color(theme.border).bg(theme.list_head)
                             .child(img(decoded).max_w(px(760.)).max_h(px(560.))),
                     )
                     .child(

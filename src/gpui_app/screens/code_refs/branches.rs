@@ -1,23 +1,33 @@
 use gpui_kit::{
+    base::StyledExt as _,
     component::{
-        button::{Button, ButtonVariants as _},
+        button::Button,
         input::{Input, InputEvent, InputState},
-        ActiveTheme as _, Icon, Sizable as _,
+        ActiveTheme as _, Icon, IconName, Sizable as _,
     },
-    div, px, uniform_list, AppContext as _, Context, Entity, InteractiveElement as _, IntoElement,
-    ParentElement as _, Render, SharedString, Styled as _, Subscription, Task, Window,
+    div, prelude::FluentBuilder as _, px, AppContext as _, Context, Entity,
+    InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString,
+    StatefulInteractiveElement as _, Styled as _, Subscription, Task, TestSupportExt as _, Window,
 };
 
-use crate::gitlab::Branch;
+use crate::gitlab::time_util::now_unix_secs;
+use crate::gitlab::{split_active_stale_branches, Branch, BranchScope, MergeRequest, Pipeline};
 use crate::nav::Screen;
 use crate::runtime::spawn_tokio;
 
+use super::super::super::safe_url::safe_open_url;
 use super::super::super::state::{AppEvent, AppState, ScreenCommand};
+use super::branches_rows::{render_branch_section, BranchSectionSpec};
+
+const OVERVIEW_PREVIEW_LIMIT: usize = 5;
 
 pub struct BranchesView {
-    state: Entity<AppState>,
+    pub(super) state: Entity<AppState>,
     filter: Entity<InputState>,
+    scope: BranchScope,
     branches: Vec<Branch>,
+    pipelines: Vec<Pipeline>,
+    mrs: Vec<MergeRequest>,
     loading: bool,
     task: Option<Task<()>>,
     _subs: Vec<Subscription>,
@@ -25,7 +35,7 @@ pub struct BranchesView {
 
 impl BranchesView {
     pub fn new(state: Entity<AppState>, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let filter = cx.new(|cx| InputState::new(window, cx).placeholder("Filter branches…"));
+        let filter = cx.new(|cx| InputState::new(window, cx).placeholder("Filter by branch name"));
         let sub_in = cx.subscribe_in(&filter, window, |_, _, ev: &InputEvent, _, cx| {
             if matches!(ev, InputEvent::Change) { cx.notify(); }
         });
@@ -33,7 +43,10 @@ impl BranchesView {
             AppEvent::HostChanged { .. } | AppEvent::ProjectChanged { .. } => {
                 this.task = None;
                 this.loading = false;
+                this.scope = BranchScope::Overview;
                 this.branches.clear();
+                this.pipelines.clear();
+                this.mrs.clear();
                 if this.state.read(cx).screen == Screen::Branches { this.load(cx); }
                 cx.notify();
             }
@@ -44,7 +57,27 @@ impl BranchesView {
                 if this.state.read(cx).screen == Screen::Branches => { this.load(cx); }
             _ => {}
         });
-        Self { state, filter, branches: Vec::new(), loading: false, task: None, _subs: vec![sub_in, sub_st] }
+        Self {
+            state, filter, scope: BranchScope::Overview,
+            branches: Vec::new(), pipelines: Vec::new(), mrs: Vec::new(),
+            loading: false, task: None, _subs: vec![sub_in, sub_st],
+        }
+    }
+
+    pub fn scope(&self) -> BranchScope { self.scope }
+
+    pub fn set_scope(&mut self, scope: BranchScope, cx: &mut Context<Self>) {
+        if self.scope != scope {
+            self.scope = scope;
+            cx.notify();
+        }
+    }
+
+    pub fn set_fixture_data(
+        &mut self, branches: Vec<Branch>, pipelines: Vec<Pipeline>, mrs: Vec<MergeRequest>, cx: &mut Context<Self>,
+    ) {
+        (self.branches, self.pipelines, self.mrs, self.loading) = (branches, pipelines, mrs, false);
+        cx.notify();
     }
 
     fn load(&mut self, cx: &mut Context<Self>) {
@@ -55,13 +88,24 @@ impl BranchesView {
         self.loading = true;
         cx.notify();
         self.task = Some(cx.spawn(async move |this, cx| {
-            let res = spawn_tokio(async move { client.branches(project.id).await.map_err(|e| e.to_string()) }).await;
+            let res = spawn_tokio(async move {
+                let (branches, pipes, mrs) = tokio::join!(
+                    client.branches(project.id),
+                    client.pipelines(project.id),
+                    client.merge_requests(project.id, "all"),
+                );
+                branches.map(|b| (b, pipes.unwrap_or_default(), mrs.unwrap_or_default())).map_err(|e| e.to_string())
+            }).await;
             let _ = this.update(cx, |v, cx| {
                 let cur = v.state.read(cx);
                 if cur.host_epoch != h_ep || cur.project_epoch != p_ep { return; }
                 v.loading = false;
                 match res {
-                    Ok(Ok(items)) => v.branches = items,
+                    Ok(Ok((branches, pipes, mrs))) => {
+                        v.branches = branches;
+                        v.pipelines = pipes;
+                        v.mrs = mrs;
+                    }
                     Ok(Err(err)) | Err(err) => v.state.update(cx, |s, cx| s.set_status(err, cx)),
                 }
                 cx.notify();
@@ -72,58 +116,95 @@ impl BranchesView {
 
 impl Render for BranchesView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme();
-        let q = self.filter.read(cx).value().trim().to_ascii_lowercase();
-        let rows: Vec<Branch> = self.branches.iter()
-            .filter(|b| q.is_empty() || b.name.to_ascii_lowercase().contains(&q))
-            .cloned().collect();
-        let count = rows.len();
-        let state = self.state.clone();
-        let list = uniform_list("branches-uniform-list", count, move |range, _, cx| {
-            range.map(|ix| {
-                let br = &rows[ix];
-                let name = br.name.clone();
-                let st_browse = state.clone();
-                let st_hist = state.clone();
-                let name_browse = name.clone();
-                let name_hist = name.clone();
-                let theme = cx.theme();
-                div()
-                    .h(px(48.)).px_4().border_b_1().border_color(theme.border.opacity(0.45))
-                    .hover(|s| s.bg(theme.list_hover))
-                    .flex().items_center().justify_between().gap_3()
-                    .child(
-                        div().flex().items_center().gap_2().min_w_0()
-                            .child(Icon::empty().path("icons/glab-branch.svg").size_4().text_color(theme.muted_foreground))
-                            .child(div().text_xs().font_family(theme.mono_font_family.clone()).text_color(theme.foreground).truncate().child(name))
-                            .children(br.default.then(|| {
-                                div().px_1p5().py(px(1.)).rounded_full().bg(theme.primary.opacity(0.2)).text_xs().text_color(theme.link).child("default")
-                            }))
-                            .children(br.protected.then(|| {
-                                div().px_1p5().py(px(1.)).rounded_full().bg(theme.secondary).text_xs().text_color(theme.muted_foreground).child("protected")
-                            })),
-                    )
-                    .child(
-                        div().flex().items_center().gap_1p5().flex_shrink_0()
-                            .child(
-                                Button::new(SharedString::from(format!("br-browse-{ix}"))).outline().xsmall().label("Browse files")
-                                    .on_click(move |_, _, cx| st_browse.update(cx, |s, cx| s.open_overview_ref(name_browse.clone(), String::new(), cx))),
-                            )
-                            .child(
-                                Button::new(SharedString::from(format!("br-hist-{ix}"))).ghost().xsmall().label("Commits")
-                                    .on_click(move |_, _, cx| st_hist.update(cx, |s, cx| s.open_commit_history(Some(name_hist.clone()), None, cx))),
-                            ),
-                    )
-            }).collect()
-        }).flex_1().size_full();
+        let query = self.filter.read(cx).value().to_string();
+        let (active, stale) = split_active_stale_branches(&self.branches, &query, now_unix_secs());
+        let project_web = self.state.read(cx).project.as_ref().map(|p| p.web_url.clone()).filter(|u| !u.is_empty());
+        let project_id = self.state.read(cx).project.as_ref().map(|p| p.id).unwrap_or(0);
+        let (border, head_bg, bg, input_b, fg, muted, active_tab_border) = {
+            let theme = cx.theme();
+            (theme.border, theme.list_head, theme.background, theme.input, theme.foreground, theme.muted_foreground, theme.primary)
+        };
 
-        div().size_full().flex().flex_col()
+        let tabs = div().flex().items_center().gap_1().children(BranchScope::ALL.into_iter().map(|sc| {
+            let is_active = self.scope == sc;
+            div()
+                .id(SharedString::from(format!("branch-tab-{}", sc.label())))
+                .px_3().py_2p5().cursor_pointer()
+                .border_b_2().border_color(if is_active { active_tab_border } else { gpui_kit::transparent_black() })
+                .text_sm()
+                .text_color(if is_active { fg } else { muted })
+                .hover(move |s| s.text_color(fg))
+                .on_click(cx.listener(move |v, _, _, cx| v.set_scope(sc, cx)))
+                .child(div().when(is_active, |d| d.font_semibold()).child(sc.label()))
+                .test_support()
+        }));
+
+        let actions = div().flex().items_center().gap_1p5().pb_1p5()
+            .child(Button::new("branches-reload").outline().small().icon(Icon::new(IconName::RefreshCw).size_3p5())
+                .on_click(cx.listener(|v, _, _, cx| v.load(cx))))
+            .children(project_web.map(|u| {
+                let url = format!("{}/-/branches", u.trim_end_matches('/'));
+                Button::new("branches-open-web").outline().small().icon(Icon::new(IconName::ExternalLink).size_3p5()).label("Web")
+                    .on_click(move |_, _, _| { let _ = safe_open_url(&url); })
+            }));
+
+        let filter_bar = div()
+            .id("branches-filter-bar").mt_3().mb_4().p_2().rounded_md().bg(head_bg).border_1().border_color(border)
             .child(
-                div().px_4().py_3().border_b_1().border_color(theme.border)
-                    .flex().items_center().justify_between().gap_3()
-                    .child(div().text_base().text_color(theme.foreground).child(format!("Branches ({count})")))
-                    .child(div().w(px(300.)).child(Input::new(&self.filter).small())),
+                div().h(px(32.)).rounded_md().bg(bg).border_1().border_color(input_b).px_2().flex().items_center().gap_1p5()
+                    .child(div().flex_1().min_w_0().child(Input::new(&self.filter).appearance(false).cleanable(true).small()))
+                    .child(Icon::new(IconName::Search).size_3p5().text_color(muted)),
             )
-            .child(list)
+            .test_support();
+
+        let body = if self.loading && self.branches.is_empty() {
+            div().py_12().flex().items_center().justify_center().text_sm().text_color(muted)
+                .child("Loading branches…").into_any_element()
+        } else {
+            let mut sections = Vec::new();
+            match self.scope {
+                BranchScope::Overview => {
+                    let more_active = (active.len() > OVERVIEW_PREVIEW_LIMIT).then_some(("Show more active branches", BranchScope::Active));
+                    sections.push(render_branch_section(
+                        BranchSectionSpec { key: "active", title: "Active branches", total: active.len(), limit: Some(OVERVIEW_PREVIEW_LIMIT), show_more: more_active },
+                        &active, &self.pipelines, &self.mrs, project_id, &self.state, cx,
+                    ));
+                    if !stale.is_empty() {
+                        let more_stale = (stale.len() > OVERVIEW_PREVIEW_LIMIT).then_some(("Show more stale branches", BranchScope::Stale));
+                        sections.push(render_branch_section(
+                            BranchSectionSpec { key: "stale", title: "Stale branches", total: stale.len(), limit: Some(OVERVIEW_PREVIEW_LIMIT), show_more: more_stale },
+                            &stale, &self.pipelines, &self.mrs, project_id, &self.state, cx,
+                        ));
+                    }
+                }
+                BranchScope::Active => sections.push(render_branch_section(
+                    BranchSectionSpec { key: "active", title: "Active branches", total: active.len(), limit: None, show_more: None },
+                    &active, &self.pipelines, &self.mrs, project_id, &self.state, cx,
+                )),
+                BranchScope::Stale => sections.push(render_branch_section(
+                    BranchSectionSpec { key: "stale", title: "Stale branches", total: stale.len(), limit: None, show_more: None },
+                    &stale, &self.pipelines, &self.mrs, project_id, &self.state, cx,
+                )),
+                BranchScope::All => {
+                    let mut all = active;
+                    all.extend(stale);
+                    sections.push(render_branch_section(
+                        BranchSectionSpec { key: "all", title: "All branches", total: all.len(), limit: None, show_more: None },
+                        &all, &self.pipelines, &self.mrs, project_id, &self.state, cx,
+                    ));
+                }
+            }
+            div().w_full().flex().flex_col().gap_4().pb_6().children(sections).into_any_element()
+        };
+
+        div()
+            .id("branches-screen").size_full().flex().flex_col().items_center().px_6().pt_3().overflow_hidden()
+            .child(
+                div().w_full().max_w(px(1200.)).flex_1().min_h_0().flex().flex_col()
+                    .child(div().w_full().border_b_1().border_color(border).flex().items_end().justify_between().gap_4().child(tabs).child(actions))
+                    .child(filter_bar)
+                    .child(div().id("branches-scroll").flex_1().min_h_0().overflow_y_scroll().pr_1().child(body)),
+            )
+            .test_support()
     }
 }

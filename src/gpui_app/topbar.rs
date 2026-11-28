@@ -6,7 +6,7 @@ use gpui_kit::{
         ActiveTheme as _, Disableable as _, Icon, IconName, Sizable as _, TitleBar,
     },
     div, px, App, Entity, InteractiveElement as _, IntoElement, ParentElement as _,
-    StatefulInteractiveElement as _, Styled as _, Window,
+    StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window,
 };
 
 use crate::nav::Screen;
@@ -93,11 +93,11 @@ pub fn render_top_bar(
     let search_bar = div()
         .id("topbar-global-search")
         .flex_1()
-        .max_w(px(460.))
+        .max_w(px(480.))
         .min_w(px(180.))
-        .h(px(26.))
-        .px_2p5()
-        .rounded_md()
+        .h(px(28.))
+        .px_3()
+        .rounded_full()
         .border_1()
         .border_color(theme.border)
         .bg(theme.background)
@@ -128,7 +128,8 @@ pub fn render_top_bar(
                 .text_xs()
                 .text_color(theme.muted_foreground)
                 .child("/"),
-        );
+        )
+        .test_support();
 
     TitleBar::new().child(
         div()

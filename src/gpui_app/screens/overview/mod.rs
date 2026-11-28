@@ -9,9 +9,12 @@ mod readme_card;
 mod toolbar;
 
 use gpui_kit::{
-    component::ActiveTheme as _, div, Context, Entity, InteractiveElement as _, IntoElement,
-    ParentElement as _, Render, StatefulInteractiveElement as _, Styled as _, Subscription, Task,
-    Window,
+    component::{
+        input::{InputEvent, InputState},
+        ActiveTheme as _,
+    },
+    div, Context, Entity, InteractiveElement as _, IntoElement, ParentElement as _, Render,
+    StatefulInteractiveElement as _, Styled as _, Subscription, Task, Window,
 };
 
 use crate::gitlab::{
@@ -21,16 +24,18 @@ use crate::gitlab::{
 use crate::nav::Screen;
 
 use super::super::markdown::MarkdownProjectContext;
+use super::super::ref_switcher::RefSwitcherState;
 use super::super::state::{AppEvent, AppState, ScreenCommand};
 use self::commit_banner::render_commit_banner;
 use self::file_table::render_file_table;
-use self::header::{render_namespace_bar, render_project_header};
+use self::header::render_project_header;
 use self::info_panel::render_info_panel;
 use self::readme_card::render_readme_card;
 use self::toolbar::render_repo_toolbar;
 
 pub struct ProjectOverviewView {
     pub(super) state: Entity<AppState>,
+    pub(super) ref_switcher: RefSwitcherState,
     pub(super) current_ref: String,
     pub(super) current_path: String,
     pub(super) ref_epoch: u64,
@@ -61,8 +66,13 @@ pub struct ProjectOverviewView {
 
 impl ProjectOverviewView {
     pub fn new(state: Entity<AppState>, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let sub = cx.subscribe_in(&state, window, |this, _, ev: &AppEvent, _, cx| match ev {
+        let ref_switcher = RefSwitcherState::new(window, cx);
+        let sub_ref = cx.subscribe_in(&ref_switcher.search_input, window, |_, _, ev: &InputEvent, _, cx| {
+            if matches!(ev, InputEvent::Change) { cx.notify(); }
+        });
+        let sub = cx.subscribe_in(&state, window, |this, _, ev: &AppEvent, window, cx| match ev {
             AppEvent::HostChanged { .. } | AppEvent::ProjectChanged { .. } => {
+                this.ref_switcher.reset(window, cx);
                 this.reset_for_project(cx);
                 if this.state.read(cx).screen == Screen::ProjectOverview { this.load_all(false, cx); }
             }
@@ -83,19 +93,26 @@ impl ProjectOverviewView {
             _ => {}
         });
         Self {
-            state, current_ref: "main".into(), current_path: String::new(), ref_epoch: 1,
+            state, ref_switcher, current_ref: "main".into(), current_path: String::new(), ref_epoch: 1,
             detail: None, languages: Vec::new(), counts: ProjectOverviewCounts::default(),
             branches: Vec::new(), tags: Vec::new(), entries: Vec::new(),
             root_special: SpecialRepoFiles::default(), latest_commit: None, commit_loading: false,
             commit_expanded: false, readme_entry: None, readme_text: None, tree_loading: false,
             commits_loading: false, server_supports_commits: true, starred: false,
             meta_task: None, tree_task: None, hydrate_task: None, commit_task: None,
-            readme_task: None, star_task: None, _subs: vec![sub],
+            readme_task: None, star_task: None, _subs: vec![sub, sub_ref],
         }
     }
 
     pub fn current_ref(&self) -> &str { &self.current_ref }
     pub fn current_path(&self) -> &str { &self.current_path }
+    pub fn ref_search_input(&self) -> &Entity<InputState> { &self.ref_switcher.search_input }
+
+    pub fn set_fixture_refs(&mut self, branches: Vec<Branch>, tags: Vec<RepoTag>, cx: &mut Context<Self>) {
+        self.branches = branches;
+        self.tags = tags;
+        cx.notify();
+    }
 
     pub fn set_fixture_tree(&mut self, entries: Vec<RepoTreeEntry>, supports_commits: bool, cx: &mut Context<Self>) {
         self.entries = entries;
@@ -156,7 +173,6 @@ impl Render for ProjectOverviewView {
                 .into_any_element();
         };
 
-        let ns_bar = render_namespace_bar(&project, &self.state, cx);
         let header = render_project_header(&project, self.detail.as_ref(), self.starred, client.as_ref(), cx);
         let toolbar = render_repo_toolbar(self, &project, self.detail.as_ref(), cx);
         let commit_bar = render_commit_banner(self.latest_commit.as_ref(), self.commit_loading, self.commit_expanded, &self.state, cx);
@@ -172,18 +188,14 @@ impl Render for ProjectOverviewView {
         );
 
         div()
-            .size_full().flex().flex_col()
-            .child(ns_bar)
-            .child(
-                div().id("overview-scroll").flex_1().min_h_0().overflow_y_scroll().px_6().py_4().child(
-                    div().w_full().flex().flex_col().child(header).child(
-                        div().w_full().flex().flex_row().items_start().gap_6()
-                            .child(
-                                div().flex_1().min_w_0().flex().flex_col().gap_3()
-                                    .child(toolbar).child(commit_bar).child(table).children(readme),
-                            )
-                            .child(info),
-                    ),
+            .id("overview-scroll").size_full().overflow_y_scroll().px_6().py_4().child(
+                div().w_full().flex().flex_col().child(header).child(
+                    div().w_full().flex().flex_row().items_start().gap_6()
+                        .child(
+                            div().flex_1().min_w_0().flex().flex_col().gap_3()
+                                .child(toolbar).child(commit_bar).child(table).children(readme),
+                        )
+                        .child(info),
                 ),
             )
             .into_any_element()

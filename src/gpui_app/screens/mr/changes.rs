@@ -43,15 +43,8 @@ pub fn render_mr_changes(
     let view_ref = head_sha
         .map(str::to_owned)
         .unwrap_or_else(|| mr.source_branch.clone());
-    let file_tree = render_mr_file_tree(
-        &view.diff_state,
-        view.raw_diffs.len(),
-        &view.fallback_notices,
-        &view.state,
-        &view_ref,
-        cx,
-    );
-    let toolbar = render_mr_diff_toolbar(&view.diff_state, view.has_truncated, cx);
+    let file_tree = render_mr_file_tree(view, &view_ref, cx);
+    let toolbar = render_mr_diff_toolbar(view, cx);
     let view_weak = cx.entity().downgrade();
     let view_add = cx.entity().downgrade();
     let composer_input = view.inline_input.clone();
@@ -114,7 +107,7 @@ pub fn render_mr_changes(
                     .rounded_md()
                     .border_1()
                     .border_color(theme.border)
-                    .bg(theme.sidebar)
+                    .bg(theme.list_head)
                     .flex()
                     .flex_col()
                     .gap_1();
@@ -148,8 +141,8 @@ pub fn render_mr_changes(
     h_resizable("mr-changes-split")
         .child(
             resizable_panel()
-                .size(px(230.))
-                .size_range(px(160.)..px(420.))
+                .size(px(300.))
+                .size_range(px(200.)..px(460.))
                 .child(file_tree),
         )
         .child(

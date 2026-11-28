@@ -5,9 +5,36 @@ use gpui_kit::{Context, ScrollStrategy};
 use crate::gitlab::{job_is_live, pipeline_is_live, Job, Pipeline};
 use crate::runtime::spawn_tokio;
 
+use super::pipeline_graph_model::build_stage_columns;
 use super::pipelines::PipelinesView;
 
 const MAX_TRACE_RETRIES: u8 = 5;
+
+fn summarize_stage_statuses(jobs: &[Job], bridges: &[crate::gitlab::BridgeJob]) -> Vec<&'static str> {
+    build_stage_columns(jobs, bridges)
+        .into_iter()
+        .map(|col| {
+            let mut has_failed = false;
+            let mut has_running = false;
+            let mut has_manual = false;
+            let mut has_pending = false;
+            for c in &col.cards {
+                match c.job.status.as_str() {
+                    "failed" if !c.job.allow_failure.unwrap_or(false) => has_failed = true,
+                    "running" | "preparing" | "canceling" => has_running = true,
+                    "manual" => has_manual = true,
+                    "pending" | "created" => has_pending = true,
+                    _ => {}
+                }
+            }
+            if has_failed { "failed" }
+            else if has_running { "running" }
+            else if has_pending { "pending" }
+            else if has_manual { "manual" }
+            else { "success" }
+        })
+        .collect()
+}
 
 impl PipelinesView {
     pub fn load_pipelines(&mut self, cx: &mut Context<Self>) {
@@ -43,12 +70,16 @@ impl PipelinesView {
     pub fn select_pipeline(&mut self, pipeline: Pipeline, cx: &mut Context<Self>) {
         let pid = pipeline.id;
         self.selected_pipeline = Some(pipeline);
+        self.selected_detail = None;
+        self.selected_test_summary = None;
+        self.detail_tab = crate::gitlab::PipelineDetailTab::Pipeline;
         self.selected_job = None;
         self.trace_poll_task = None;
         self.jobs.clear();
         self.bridges.clear();
         self.wipe_log();
         self.sync_summary(cx);
+        cx.notify();
 
         let st = self.state.read(cx);
         if st.offline_mode { return; }
@@ -56,15 +87,26 @@ impl PipelinesView {
         let (h_ep, p_ep) = (st.host_epoch, st.project_epoch);
         self.jobs_task = Some(cx.spawn(async move |this, cx| {
             let res = spawn_tokio(async move {
-                let (jobs, bridges) = tokio::join!(client.pipeline_jobs_all(project.id, pid), client.pipeline_bridges(project.id, pid));
-                (jobs.map_err(|e| e.to_string()), bridges.unwrap_or_default())
+                let (jobs, bridges, detail, tests) = tokio::join!(
+                    client.pipeline_jobs_all(project.id, pid),
+                    client.pipeline_bridges(project.id, pid),
+                    client.pipeline_detail(project.id, pid),
+                    client.pipeline_test_report_summary(project.id, pid),
+                );
+                (jobs.map_err(|e| e.to_string()), bridges.unwrap_or_default(), detail.ok(), tests.ok().flatten())
             })
             .await;
             let _ = this.update(cx, |v, cx| {
                 let cur = v.state.read(cx);
                 if cur.host_epoch != h_ep || cur.project_epoch != p_ep { return; }
                 if v.selected_pipeline.as_ref().map(|p| p.id) != Some(pid) { return; }
-                if let Ok((Ok(jobs), bridges)) = res { v.jobs = jobs; v.bridges = bridges; }
+                if let Ok((Ok(jobs), bridges, detail, tests)) = res {
+                    v.stages_cache.insert(pid, summarize_stage_statuses(&jobs, &bridges));
+                    v.jobs = jobs;
+                    v.bridges = bridges;
+                    v.selected_detail = detail;
+                    v.selected_test_summary = tests;
+                }
                 cx.notify();
             });
         }));

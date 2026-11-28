@@ -122,7 +122,7 @@ pub fn render_tree_panel(view: &RepositoryView, cx: &mut Context<RepositoryView>
 
     div()
         .size_full()
-        .bg(theme.sidebar)
+        .bg(theme.background)
         .border_r_1()
         .border_color(theme.border)
         .flex()

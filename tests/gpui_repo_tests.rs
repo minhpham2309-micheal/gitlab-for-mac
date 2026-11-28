@@ -1,9 +1,13 @@
 use gpui_kit::{
-    px, size, AppContext as _, Bounds, Focusable as _, TestAppContext, WindowBounds, WindowOptions,
+    px, size,
+    test::TestWindowExt as _,
+    AppContext as _, Bounds, Focusable as _, TestAppContext, WindowBounds, WindowOptions,
 };
 
 use gitlab_for_mac::config::HostAuth;
-use gitlab_for_mac::gitlab::{Project, RepoBlob, RepoBlobKind, RepoTreeEntry, TreeLastCommit};
+use gitlab_for_mac::gitlab::{
+    Branch, Project, RepoBlob, RepoBlobKind, RepoTag, RepoTreeEntry, TreeLastCommit,
+};
 use gitlab_for_mac::gpui_app::{
     actions::{DismissOverlay, OpenFindFile},
     init_app,
@@ -204,6 +208,66 @@ fn find_file_modal_and_code_ref_screens_mount_and_dismiss(cx: &mut TestAppContex
             state.update(cx, |s, cx| s.set_screen(screen, cx));
             win.draw(cx).clear(cx);
         }
+    })
+    .unwrap();
+}
+
+#[gpui_kit::test]
+fn overview_ref_switcher_scrolls_filters_and_selects_branch_or_tag(cx: &mut TestAppContext) {
+    let (win, shell) = mount_with_project(cx);
+    cx.run_until_parked();
+
+    cx.update_window(win, |_, win, cx| {
+        let ov = shell.read(cx).overview_view().clone();
+        let mut branches = vec![
+            Branch { name: "main".into(), default: true, protected: true, ..Default::default() },
+            Branch { name: "release/v2.0".into(), default: false, protected: true, ..Default::default() },
+        ];
+        for i in 1..=35 {
+            branches.push(Branch {
+                name: format!("feat/module-{i:02}-long-branch-name"),
+                default: false,
+                protected: false,
+                ..Default::default()
+            });
+        }
+        let tags = vec![
+            RepoTag { name: "v2.4.0".into(), protected: true, ..Default::default() },
+            RepoTag { name: "v2.3.0".into(), protected: false, ..Default::default() },
+        ];
+        ov.update(cx, |v, cx| v.set_fixture_refs(branches, tags, cx));
+        win.render_frame(cx);
+
+        // Open GitLab 18 "Select Git revision" popover and verify bounded scrollable height.
+        win.click("ov-ref-select", cx);
+        win.render_frame(cx);
+        let panel = win.find("ov-ref-panel");
+        assert!(panel.visible());
+        assert!(panel.bounds().size.height <= px(420.), "ref switcher popover must be bounded, got {:?}", panel.bounds().size.height);
+        assert!(win.find("ov-ref-selected-row").visible());
+        assert!(win.find("ov-ref-scroll").visible());
+
+        // Filter branches live via search box and select matching branch.
+        let search = ov.read(cx).ref_search_input().clone();
+        search.update(cx, |inp, cx| inp.set_value("release/v2", win, cx));
+        win.render_frame(cx);
+        assert!(win.find("ov-ref-branch-0").visible());
+        assert!(win.try_find("ov-ref-branch-1").is_none());
+
+        win.click("ov-ref-branch-0", cx);
+        win.render_frame(cx);
+        assert_eq!(ov.read(cx).current_ref(), "release/v2.0");
+        assert!(win.try_find("ov-ref-panel").is_none());
+
+        // Re-open, filter for tag, and switch to tag.
+        win.click("ov-ref-select", cx);
+        win.render_frame(cx);
+        search.update(cx, |inp, cx| inp.set_value("v2.4", win, cx));
+        win.render_frame(cx);
+        win.click("ov-ref-tag-0", cx);
+        win.render_frame(cx);
+        assert_eq!(ov.read(cx).current_ref(), "v2.4.0");
+        assert!(win.try_find("ov-ref-panel").is_none());
     })
     .unwrap();
 }

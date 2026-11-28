@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use gpui_kit::{
     component::{
         input::{InputEvent, InputState},
@@ -8,19 +10,31 @@ use gpui_kit::{
 };
 
 use crate::gitlab::log_model::{LogModel, LogSearchHit, VisibleLogRow};
-use crate::gitlab::{job_is_live, pipeline_is_live, BridgeJob, Job, Pipeline};
+use crate::gitlab::{
+    job_is_live, pipeline_is_live, BridgeJob, Job, Pipeline, PipelineDetail, PipelineDetailTab,
+    PipelineScope, PipelineTestSummary,
+};
 use crate::nav::Screen;
 
 use super::super::state::{AppEvent, AppState, ScreenCommand};
 use super::job_log::render_job_log;
 use super::pipeline_graph::render_stage_graph;
+use super::pipelines_detail::render_pipeline_detail_view;
 use super::pipelines_list::render_pipelines_list;
+use super::pipelines_table::render_pipelines_table_view;
 
 pub struct PipelinesView {
     pub(crate) state: Entity<AppState>,
     pub(crate) visible: bool,
+    pub(crate) split_mode: bool,
+    pub(crate) scope: PipelineScope,
+    pub(crate) detail_tab: PipelineDetailTab,
+    pub(crate) pipe_filter_input: Entity<InputState>,
     pub(crate) pipelines: Vec<Pipeline>,
     pub(crate) selected_pipeline: Option<Pipeline>,
+    pub(crate) selected_detail: Option<PipelineDetail>,
+    pub(crate) selected_test_summary: Option<PipelineTestSummary>,
+    pub(crate) stages_cache: HashMap<u64, Vec<&'static str>>,
     pub(crate) pending_pipeline_id: Option<u64>,
     pub(crate) jobs: Vec<Job>,
     pub(crate) bridges: Vec<BridgeJob>,
@@ -52,6 +66,10 @@ pub struct PipelinesView {
 impl PipelinesView {
     pub fn new(state: Entity<AppState>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let search_input = cx.new(|cx| InputState::new(window, cx).placeholder("Find in log… (⌘F)"));
+        let pipe_filter_input = cx.new(|cx| InputState::new(window, cx).placeholder("Filter pipelines by #ID, ref, SHA, status, source…"));
+        let sub_filter = cx.subscribe_in(&pipe_filter_input, window, |_, _, ev: &InputEvent, _, cx| {
+            if matches!(ev, InputEvent::Change) { cx.notify(); }
+        });
         let sub_search = cx.subscribe_in(&search_input, window, |this, _, ev: &InputEvent, _, cx| {
             match ev {
                 InputEvent::Change => this.schedule_search(cx),
@@ -94,8 +112,10 @@ impl PipelinesView {
             (prefs.default_log_wrap, prefs.pipeline_graph_zoom())
         };
         Self {
-            state, visible: false, pipelines: Vec::new(), selected_pipeline: None,
-            pending_pipeline_id: None,
+            state, visible: false, split_mode: false, scope: PipelineScope::All,
+            detail_tab: PipelineDetailTab::Pipeline, pipe_filter_input,
+            pipelines: Vec::new(), selected_pipeline: None, selected_detail: None,
+            selected_test_summary: None, stages_cache: HashMap::new(), pending_pipeline_id: None,
             jobs: Vec::new(), bridges: Vec::new(), selected_job: None, branches: Vec::new(),
             log_model: LogModel::new(), visible_rows: Vec::new(), log_offset: 0,
             auto_scroll_tail: true, wrap_lines: initial_wrap, graph_zoom_pct: initial_zoom,
@@ -103,8 +123,21 @@ impl PipelinesView {
             search_input, search_hits: Vec::new(), search_idx: 0, sel_anchor: None, sel_end: None,
             load_task: None, jobs_task: None, ci_poll_task: None, trace_poll_task: None,
             search_debounce_task: None, action_task: None, download_task: None,
-            branches_task: None, _subs: vec![sub_search, sub_state],
+            branches_task: None, _subs: vec![sub_filter, sub_search, sub_state],
         }
+    }
+
+    pub fn is_split_mode(&self) -> bool { self.split_mode }
+    pub fn toggle_split_mode(&mut self, cx: &mut Context<Self>) { self.split_mode = !self.split_mode; cx.notify(); }
+    pub fn back_to_list(&mut self, cx: &mut Context<Self>) {
+        (self.selected_pipeline, self.selected_detail, self.selected_test_summary) = (None, None, None);
+        self.close_job_log(cx);
+    }
+    pub fn close_job_log(&mut self, cx: &mut Context<Self>) {
+        (self.selected_job, self.trace_poll_task) = (None, None);
+        self.wipe_log();
+        self.sync_summary(cx);
+        cx.notify();
     }
 
     fn handle_command(&mut self, cmd: ScreenCommand, window: &mut Window, cx: &mut Context<Self>) {
@@ -150,16 +183,11 @@ impl PipelinesView {
     }
 
     fn reset_all(&mut self, cx: &mut Context<Self>) {
-        self.load_task = None;
-        self.jobs_task = None;
-        self.ci_poll_task = None;
-        self.trace_poll_task = None;
-        self.action_task = None;
-        self.download_task = None;
-        self.branches_task = None;
+        (self.load_task, self.jobs_task, self.ci_poll_task, self.trace_poll_task) = (None, None, None, None);
+        (self.action_task, self.download_task, self.branches_task) = (None, None, None);
         self.pipelines.clear();
-        self.selected_pipeline = None;
-        self.pending_pipeline_id = None;
+        (self.selected_pipeline, self.selected_detail, self.selected_test_summary, self.pending_pipeline_id) = (None, None, None, None);
+        self.stages_cache.clear();
         self.jobs.clear();
         self.bridges.clear();
         self.selected_job = None;
@@ -194,14 +222,17 @@ impl PipelinesView {
 impl Render for PipelinesView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let can_ci = self.state.read(cx).project_permissions.can_run_pipelines();
+        if !self.split_mode {
+            return if let Some(pipe) = self.selected_pipeline.clone() {
+                render_pipeline_detail_view(self, &pipe, can_ci, cx).into_any_element()
+            } else {
+                render_pipelines_table_view(self, can_ci, cx).into_any_element()
+            };
+        }
         let left = render_pipelines_list(self.pipelines.clone(), self.selected_pipeline.as_ref(), can_ci, cx);
         let graph = render_stage_graph(
-            &self.jobs,
-            &self.bridges,
-            self.selected_job.as_ref().map(|j| j.id),
-            self.graph_zoom_pct,
-            can_ci,
-            cx,
+            &self.jobs, &self.bridges, self.selected_job.as_ref().map(|j| j.id),
+            self.graph_zoom_pct, can_ci, cx,
         );
         let log_view = render_job_log(self, cx);
         let right = v_resizable("pipelines-right-split")
@@ -210,5 +241,6 @@ impl Render for PipelinesView {
         h_resizable("pipelines-main-split")
             .child(resizable_panel().size(px(290.)).size_range(px(220.)..px(460.)).child(left))
             .child(resizable_panel().child(right))
+            .into_any_element()
     }
 }

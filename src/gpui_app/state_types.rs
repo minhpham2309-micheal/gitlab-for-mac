@@ -39,6 +39,7 @@ pub enum ScreenCommand {
     },
     OpenFindFile,
     OpenPipeline { pipeline_id: u64 },
+    OpenGroup { full_path: Option<String> },
 }
 
 #[derive(Debug, Clone)]

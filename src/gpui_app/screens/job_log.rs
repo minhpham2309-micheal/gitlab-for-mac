@@ -34,6 +34,7 @@ pub fn render_job_log(
         view.wrap_lines,
         view.selection_bounds().is_some(),
         can_run_ci,
+        !view.split_mode,
         cx,
     );
     let search_bar = render_job_log_search_bar(
