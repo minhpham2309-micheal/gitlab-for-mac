@@ -118,6 +118,11 @@ impl AppShell {
     pub fn releases_view(&self) -> &Entity<ReleasesView> { &self.releases_view }
     pub fn todos_view(&self) -> &Entity<TodosView> { &self.todos_view }
     pub fn issues_view(&self) -> &Entity<IssuesView> { &self.issues_view }
+    pub fn projects_view(&self) -> &Entity<ProjectsView> { &self.projects_view }
+    pub fn schedules_view(&self) -> &Entity<SchedulesView> { &self.schedules_view }
+    pub fn runners_view(&self) -> &Entity<RunnersView> { &self.runners_view }
+    pub fn search_view(&self) -> &Entity<SearchView> { &self.search_view }
+    pub fn console_view(&self) -> &Entity<ConsoleView> { &self.console_view }
 
     pub(crate) fn toggle_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.palette_open = !self.palette_open;

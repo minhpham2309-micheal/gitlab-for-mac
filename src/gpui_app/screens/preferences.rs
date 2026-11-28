@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use gpui_kit::{
+    base::StyledExt as _,
     component::{
         button::Button,
         input::{InputEvent, InputState},
@@ -142,26 +143,16 @@ impl Render for PreferencesView {
         let prefs = self.state.read(cx).prefs.clone();
         let theme = cx.theme();
         let header = div()
-            .px_4()
-            .py_3()
-            .border_b_1()
-            .border_color(theme.border)
-            .flex()
-            .items_center()
-            .justify_between()
+            .w_full().max_w(px(820.)).mx_auto().pb_3()
+            .border_b_1().border_color(theme.border)
+            .flex().items_center().justify_between().gap_4()
             .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_0p5()
-                    .child(div().text_base().text_color(theme.foreground).child("Preferences"))
+                div().flex().flex_col().gap_0p5()
+                    .child(div().text_2xl().font_bold().text_color(theme.foreground).child("Preferences"))
                     .child(div().text_xs().text_color(theme.muted_foreground).child("Saved automatically · ⌘+ / ⌘- / ⌘0 to zoom anytime")),
             )
             .child(
-                Button::new("pref-reset-all")
-                    .outline()
-                    .small()
-                    .label("Reset to defaults")
+                Button::new("pref-reset-all").outline().small().label("Reset to defaults")
                     .on_click(cx.listener(|this, _, w, cx| this.reset_defaults(w, cx))),
             );
 
@@ -172,30 +163,13 @@ impl Render for PreferencesView {
         let viewer_preview = render_viewer_and_preview_cards(&prefs, cx);
 
         div()
-            .size_full()
-            .flex()
-            .flex_col()
+            .size_full().flex().flex_col().px_6().pt_3().overflow_hidden()
             .child(header)
             .child(
-                div()
-                    .id("preferences-scroll")
-                    .flex_1()
-                    .min_h_0()
-                    .overflow_y_scroll()
-                    .p_4()
+                div().id("preferences-scroll").flex_1().min_h_0().overflow_y_scroll().py_4()
                     .child(
-                        div()
-                            .w_full()
-                            .max_w(px(780.))
-                            .mx_auto()
-                            .flex()
-                            .flex_col()
-                            .gap_4()
-                            .child(account)
-                            .child(updates)
-                            .child(appearance)
-                            .child(typography)
-                            .child(viewer_preview),
+                        div().w_full().max_w(px(820.)).mx_auto().flex().flex_col().gap_4()
+                            .child(account).child(updates).child(appearance).child(typography).child(viewer_preview),
                     ),
             )
     }
