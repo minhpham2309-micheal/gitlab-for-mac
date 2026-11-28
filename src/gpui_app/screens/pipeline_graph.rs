@@ -74,7 +74,7 @@ pub fn render_stage_graph(
     let theme = cx.theme();
     let dark = theme.is_dark();
     let border = theme.border;
-    let sidebar_bg = theme.sidebar;
+    let card_bg = theme.list_head;
     let popover_bg = theme.popover;
     let fg = theme.foreground;
     let muted = theme.muted_foreground;
@@ -126,7 +126,7 @@ pub fn render_stage_graph(
             .rounded_md()
             .border_1()
             .border_color(border)
-            .bg(sidebar_bg)
+            .bg(card_bg)
             .p(col_pad)
             .flex()
             .flex_col()

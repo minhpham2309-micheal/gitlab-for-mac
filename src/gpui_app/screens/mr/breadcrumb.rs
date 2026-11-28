@@ -1,12 +1,18 @@
 use gpui_kit::{
-    base::StyledExt as _, component::ActiveTheme as _, div, Context, Entity,
-    InteractiveElement as _, IntoElement, ParentElement as _, SharedString,
-    StatefulInteractiveElement as _, Styled as _, TestSupportExt as _,
+    base::StyledExt as _,
+    component::{
+        button::{Button, ButtonVariants as _},
+        ActiveTheme as _, Icon, IconName, Sizable as _,
+    },
+    div, px, Context, Entity, InteractiveElement as _, IntoElement, ParentElement as _,
+    SharedString, StatefulInteractiveElement as _, Styled as _, TestSupportExt as _,
 };
 
 use crate::gitlab::Project;
 use crate::nav::Screen;
 
+use super::super::super::breadcrumb::PANEL_BREADCRUMB_H;
+use super::super::super::safe_url::safe_open_url;
 use super::super::super::state::AppState;
 use super::MergeRequestsView;
 
@@ -19,20 +25,18 @@ pub fn render_mr_breadcrumb(
     let theme = cx.theme();
     let segments: Vec<&str> = project.path_with_namespace.split('/').collect();
     let last_ix = segments.len().saturating_sub(1);
+    let web_url = match active_mr_iid {
+        Some(iid) => format!("{}/-/merge_requests/{iid}", project.web_url.trim_end_matches('/')),
+        None => format!("{}/-/merge_requests", project.web_url.trim_end_matches('/')),
+    };
 
     let mut row = div()
-        .id("mr-breadcrumb-bar")
-        .w_full()
-        .px_6()
-        .py_2p5()
-        .border_b_1()
-        .border_color(theme.border.opacity(0.6))
         .flex()
         .items_center()
         .flex_wrap()
         .gap_1p5()
-        .text_xs()
-        .test_support();
+        .min_w_0()
+        .text_xs();
 
     for (ix, seg) in segments.into_iter().enumerate() {
         if ix > 0 {
@@ -89,5 +93,27 @@ pub fn render_mr_breadcrumb(
         );
     }
 
-    row
+    div()
+        .id("mr-breadcrumb-bar")
+        .w_full()
+        .h(px(PANEL_BREADCRUMB_H))
+        .flex_shrink_0()
+        .px_6()
+        .border_b_1()
+        .border_color(theme.border.opacity(0.75))
+        .flex()
+        .items_center()
+        .justify_between()
+        .gap_3()
+        .child(row)
+        .child(
+            Button::new("mr-bc-open-web")
+                .ghost()
+                .xsmall()
+                .icon(Icon::new(IconName::ExternalLink).size_3p5())
+                .on_click(move |_, _, _| {
+                    let _ = safe_open_url(&web_url);
+                }),
+        )
+        .test_support()
 }

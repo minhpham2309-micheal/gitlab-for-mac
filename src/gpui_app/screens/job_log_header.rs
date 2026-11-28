@@ -165,7 +165,7 @@ pub fn render_job_log_search_bar(
         .py_1()
         .border_b_1()
         .border_color(theme.border)
-        .bg(theme.sidebar)
+        .bg(theme.list_head)
         .flex()
         .items_center()
         .gap_2()

@@ -383,3 +383,40 @@ fn sidebar_project_block_has_individual_targets_and_collapsed_layout_is_aligned(
     })
     .unwrap();
 }
+
+#[gpui_kit::test]
+fn studio_floating_panel_and_unified_breadcrumb_render_across_screens(cx: &mut TestAppContext) {
+    let (window, shell) = mount_shell(cx);
+    cx.update_window(window, |_, win, cx| {
+        win.render_frame(cx);
+        assert!(win.find("studio-main-panel").visible());
+        assert!(win.find("studio-panel-breadcrumb").visible());
+        assert!(win.find("topbar-global-search").visible());
+
+        let state = shell.read(cx).state().clone();
+        let proj = state.read(cx).projects[0].clone();
+        state.update(cx, |s, cx| s.select_project(proj, cx));
+        win.render_frame(cx);
+        assert!(win.find("studio-panel-breadcrumb").visible());
+
+        for screen in [Screen::Pipelines, Screen::Commits, Screen::Branches, Screen::Releases, Screen::Todos] {
+            state.update(cx, |s, cx| s.set_screen(screen, cx));
+            win.render_frame(cx);
+            assert!(win.find("studio-main-panel").visible());
+            assert!(win.find("studio-panel-breadcrumb").visible());
+        }
+
+        // Clicking project segment in breadcrumb returns to ProjectOverview.
+        state.update(cx, |s, cx| s.set_screen(Screen::Branches, cx));
+        win.render_frame(cx);
+        win.click("ns-seg-1", cx);
+        assert_eq!(state.read(cx).screen, Screen::ProjectOverview);
+
+        // MergeRequests renders its own dynamic !iid breadcrumb instead of duplicating the shell bar.
+        state.update(cx, |s, cx| s.set_screen(Screen::MergeRequests, cx));
+        win.render_frame(cx);
+        assert!(win.try_find("studio-panel-breadcrumb").is_none());
+        assert!(win.find("mr-breadcrumb-bar").visible());
+    })
+    .unwrap();
+}

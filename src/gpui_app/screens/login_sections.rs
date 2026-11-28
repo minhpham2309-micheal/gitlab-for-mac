@@ -88,7 +88,7 @@ pub(super) fn render_discovered_accounts_card(
 
     div()
         .id("login-accounts-card").w_full().p_4().rounded_lg()
-        .border_1().border_color(theme.border).bg(theme.sidebar)
+        .border_1().border_color(theme.border).bg(theme.list_head)
         .flex().flex_col().gap_2p5()
         .child(
             div().flex().items_center().justify_between().gap_2()

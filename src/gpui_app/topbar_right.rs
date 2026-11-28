@@ -190,6 +190,8 @@ pub fn render_top_bar_right(state: &Entity<AppState>, cx: &mut App) -> impl Into
         None
     };
 
+    let divider = div().w(px(1.)).h(px(16.)).mx_0p5().bg(cx.theme().border);
+
     div()
         .flex()
         .items_center()
@@ -197,6 +199,7 @@ pub fn render_top_bar_right(state: &Entity<AppState>, cx: &mut App) -> impl Into
         .flex_shrink_0()
         .children(update_pill)
         .child(plus_btn)
+        .child(divider)
         .child(count_pill("top-issues", "icons/glab-issue.svg", issues_count, !has_project, Screen::Issues, state.clone(), cx))
         .child(count_pill("top-mrs", "icons/glab-mr.svg", mrs_count, !has_project, Screen::MergeRequests, state.clone(), cx))
         .child(count_pill("top-todos", "icons/glab-todo.svg", todos_count, false, Screen::Todos, state.clone(), cx))

@@ -102,7 +102,7 @@ impl Render for LoginView {
             .rounded_lg()
             .border_1()
             .border_color(theme.border)
-            .bg(theme.sidebar)
+            .bg(theme.list_head)
             .flex()
             .flex_col()
             .gap_3()

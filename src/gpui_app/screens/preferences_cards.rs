@@ -134,7 +134,7 @@ pub(crate) fn card_shell(title: &'static str, cx: &Context<PreferencesView>) -> 
         .rounded_lg()
         .border_1()
         .border_color(theme.border)
-        .bg(theme.sidebar)
+        .bg(theme.list_head)
         .flex()
         .flex_col()
         .gap_3()

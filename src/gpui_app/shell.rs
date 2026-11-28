@@ -2,12 +2,13 @@ use gpui_kit::{
     component::{command::CommandState, ActiveTheme as _},
     div, AnyElement, AppContext as _, Context, Entity, FocusHandle, Focusable,
     InteractiveElement as _, IntoElement, ParentElement as _, Render, Styled as _, Subscription,
-    Window,
+    TestSupportExt as _, Window,
 };
 
 use crate::nav::Screen;
 
-use super::pajamas_theme::apply_theme_from_prefs;
+use super::breadcrumb::render_panel_breadcrumb;
+use super::pajamas_theme::{apply_theme_from_prefs, studio_panel_border, studio_shell_bg};
 use super::palette::render_palette_overlay;
 use super::screens::{
     code_refs::{BranchesView, CommitsView, TagsView},
@@ -170,21 +171,24 @@ impl AppShell {
 
 impl Render for AppShell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme();
+        let dark = cx.theme().is_dark();
+        let panel_bg = cx.theme().background;
+        let fg = cx.theme().foreground;
         let update_modal = self.state.read(cx).update.modal_open.then(|| {
             render_update_modal(&self.state, cx)
         });
         let root = div().id("glab-app-shell").track_focus(&self.focus_handle).relative()
-            .size_full().flex().flex_col().bg(theme.background).text_color(theme.foreground);
+            .size_full().flex().flex_col().bg(studio_shell_bg(dark)).text_color(fg);
 
         if !self.state.read(cx).is_authenticated() {
-            return attach_shell_actions(root, cx)
+            return attach_shell_actions(root.bg(panel_bg), cx)
                 .child(self.login_view.clone())
                 .children(update_modal);
         }
 
         let sidebar = render_sidebar(&self.state, cx);
         let top_bar = render_top_bar(&self.state, window, cx);
+        let panel_breadcrumb = render_panel_breadcrumb(&self.state, cx);
         let status_bar = render_status_bar(self.state.read(cx), cx);
         let shell_weak = cx.entity().downgrade();
         let palette = self.palette_open.then(|| {
@@ -199,12 +203,22 @@ impl Render for AppShell {
             )
         });
 
+        let main_panel = div()
+            .flex_1().min_w_0().min_h_0().pr_2().pb_1p5().flex().flex_col()
+            .child(
+                div()
+                    .id("studio-main-panel")
+                    .flex_1().min_w_0().min_h_0()
+                    .rounded_lg().border_1().border_color(studio_panel_border(dark))
+                    .bg(panel_bg).overflow_hidden().flex().flex_col()
+                    .children(panel_breadcrumb)
+                    .child(div().flex_1().min_w_0().min_h_0().flex().flex_col().child(self.render_screen_body(cx)))
+                    .test_support(),
+            );
+
         attach_shell_actions(root, cx)
             .child(top_bar)
-            .child(
-                div().flex_1().min_h_0().flex().flex_row().child(sidebar)
-                    .child(div().flex_1().min_w_0().min_h_0().flex().flex_col().child(self.render_screen_body(cx))),
-            )
+            .child(div().flex_1().min_h_0().flex().flex_row().child(sidebar).child(main_panel))
             .child(status_bar)
             .child(self.find_file_modal.clone())
             .children(update_modal)

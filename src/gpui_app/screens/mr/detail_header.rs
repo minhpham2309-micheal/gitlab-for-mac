@@ -13,20 +13,22 @@ use gpui_kit::{
 use crate::gitlab::time_util::format_relative;
 use crate::gitlab::{mr_can_review, MergeRequest};
 
+use super::super::super::pajamas_theme::status_badge_palette;
 use super::super::super::safe_url::safe_open_url;
 use super::MergeRequestsView;
 
 fn mr_state_pill(mr: &MergeRequest, dark: bool) -> (gpui_kit::Hsla, gpui_kit::Hsla, &'static str) {
-    if mr.state == "merged" {
-        return (rgb(if dark { 0x1F75CB } else { 0x1068BF }).into(), rgb(0xFFFFFF).into(), "Merged");
-    }
-    if mr.state == "closed" {
-        return (rgb(if dark { 0xDD2B0E } else { 0xC91C00 }).into(), rgb(0xFFFFFF).into(), "Closed");
-    }
-    if mr.draft {
-        return (rgb(if dark { 0x4C4B51 } else { 0xDCDCDE }).into(), rgb(if dark { 0xECECEF } else { 0x28272D }).into(), "Draft");
-    }
-    (rgb(if dark { 0x2DA160 } else { 0x108548 }).into(), rgb(if dark { 0x102A1C } else { 0xFFFFFF }).into(), "Open")
+    let (key, label) = if mr.state == "merged" {
+        ("merged", "Merged")
+    } else if mr.state == "closed" {
+        ("closed", "Closed")
+    } else if mr.draft {
+        ("skipped", "Draft")
+    } else {
+        ("open", "Open")
+    };
+    let p = status_badge_palette(key, dark);
+    (p.bg, p.text, label)
 }
 
 pub fn render_mr_detail_header(
@@ -50,15 +52,17 @@ pub fn render_mr_detail_header(
     let (state_for_copy, state_for_code) = (view.state.clone(), view.state.clone());
     let (weak_more, weak_rev) = (cx.entity().downgrade(), cx.entity().downgrade());
 
-    let src_bg: gpui_kit::Hsla = if dark { rgb(0x1F3550).into() } else { rgb(0xE9F3FC).into() };
-    let active_tab_border: gpui_kit::Hsla = if dark { rgb(0x63A6E9).into() } else { theme.primary };
-    let badge_bg: gpui_kit::Hsla = if dark { rgb(0xBFBFBF).into() } else { theme.secondary };
-    let badge_fg: gpui_kit::Hsla = if dark { rgb(0x18171D).into() } else { theme.foreground };
-    let thread_bg: gpui_kit::Hsla = if dark { rgb(0x473318).into() } else { rgb(0xFDF1DD).into() };
-    let thread_bd: gpui_kit::Hsla = if dark { rgb(0x8A5D1E).into() } else { rgb(0xE0B15C).into() };
-    let thread_fg: gpui_kit::Hsla = if dark { rgb(0xF6D399).into() } else { rgb(0x7A4400).into() };
-    let cta_bg: gpui_kit::Hsla = if dark { rgb(0x63A6E9).into() } else { theme.primary };
-    let cta_fg: gpui_kit::Hsla = if dark { rgb(0x18171D).into() } else { theme.primary_foreground };
+    let src_bg: gpui_kit::Hsla = if dark { rgb(0x254581).into() } else { rgb(0xDFEEFC).into() };
+    let active_tab_border = theme.primary;
+    let active_badge_bg = theme.primary;
+    let active_badge_fg = theme.primary_foreground;
+    let inactive_badge_bg: gpui_kit::Hsla = if dark { rgb(0x383839).into() } else { theme.secondary };
+    let inactive_badge_fg: gpui_kit::Hsla = if dark { rgb(0xBFBFBF).into() } else { theme.muted_foreground };
+    let thread_bg: gpui_kit::Hsla = if dark { rgb(0x472614).into() } else { rgb(0xFDF1DD).into() };
+    let thread_bd: gpui_kit::Hsla = if dark { rgb(0x7D2D0E).into() } else { rgb(0xE0B15C).into() };
+    let thread_fg: gpui_kit::Hsla = if dark { rgb(0xF7B951).into() } else { rgb(0x7A4400).into() };
+    let cta_bg = theme.primary;
+    let cta_fg = theme.primary_foreground;
 
     let non_sys_notes: usize = view.discussions.iter().map(|d| d.notes.iter().filter(|n| !n.system).count()).sum();
     let open_threads = view.unresolved_thread_indices().len();
@@ -197,6 +201,7 @@ pub fn render_mr_detail_header(
         .flex().items_end().justify_between().gap_4()
         .child(div().flex().items_center().gap_1().children(tabs_meta.into_iter().enumerate().map(|(ix, (lbl, cnt))| {
             let active = view.active_tab == ix;
+            let (badge_bg, badge_fg) = if active { (active_badge_bg, active_badge_fg) } else { (inactive_badge_bg, inactive_badge_fg) };
             div()
                 .id(SharedString::from(format!("mr-detail-tab-{ix}")))
                 .px_3().py_2().cursor_pointer()

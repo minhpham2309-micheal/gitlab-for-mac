@@ -1,4 +1,5 @@
 use gpui_kit::{
+    base::StyledExt as _,
     component::{tooltip::Tooltip, ActiveTheme as _, Icon, IconName},
     div, prelude::FluentBuilder as _, px, App, Entity, InteractiveElement as _, IntoElement,
     ParentElement as _, SharedString, StatefulInteractiveElement as _, Styled as _,
@@ -7,7 +8,7 @@ use gpui_kit::{
 
 use crate::nav::{Screen, SidebarSection};
 
-use super::avatar::render_avatar;
+use super::avatar::render_entity_avatar;
 use super::safe_url::safe_open_url;
 use super::state::AppState;
 
@@ -28,19 +29,16 @@ pub fn render_project_card(state: &Entity<AppState>, collapsed: bool, cx: &mut A
     let av_size = if collapsed { px(24.) } else { px(26.) };
     let av = div()
         .id("sidebar-project-avatar")
-        .rounded_full()
         .flex_shrink_0()
-        .child(render_avatar(av_url.as_deref(), &name, av_size, client.as_ref(), cx))
+        .child(render_entity_avatar(av_url.as_deref(), &name, av_size, client.as_ref(), cx))
         .test_support();
     let theme = cx.theme();
     let click_state = state.clone();
     let tooltip_name: SharedString = name.clone().into();
     let resting_bg = if active_overview {
         theme.sidebar_accent
-    } else if collapsed {
-        gpui_kit::transparent_black()
     } else {
-        theme.secondary.opacity(0.6)
+        gpui_kit::transparent_black()
     };
     let fg = if active_overview { theme.sidebar_accent_foreground } else { theme.sidebar_foreground };
 
@@ -65,7 +63,7 @@ pub fn render_project_card(state: &Entity<AppState>, collapsed: bool, cx: &mut A
         })
         .child(av)
         .when(!collapsed, |el| {
-            el.child(div().flex_1().min_w_0().text_xs().line_clamp(2).child(name))
+            el.child(div().flex_1().min_w_0().text_xs().font_semibold().line_clamp(2).child(name))
         })
         .test_support();
 
@@ -78,7 +76,7 @@ pub fn render_project_card(state: &Entity<AppState>, collapsed: bool, cx: &mut A
         .flex()
         .flex_col()
         .gap_1()
-        .child(div().px_2().text_xs().text_color(theme.muted_foreground).child("Project"))
+        .child(div().px_2().text_xs().font_semibold().text_color(theme.foreground).child(if has_proj { "Project" } else { "Your work" }))
         .child(card)
         .into_any_element()
 }
@@ -138,6 +136,7 @@ pub fn render_pinned_section(state: &Entity<AppState>, collapsed: bool, cx: &App
             box_el = box_el.child(
                 div()
                     .id(SharedString::from(format!("pinned-{}", screen.key())))
+                    .relative()
                     .w_full()
                     .px_3()
                     .py_1()
@@ -151,7 +150,23 @@ pub fn render_pinned_section(state: &Entity<AppState>, collapsed: bool, cx: &App
                     .flex()
                     .items_center()
                     .justify_between()
-                    .child(div().text_xs().text_color(label_fg).child(screen.label()))
+                    .children(is_active.then(|| {
+                        div()
+                            .absolute()
+                            .left_0()
+                            .top(px(4.))
+                            .bottom(px(4.))
+                            .w(px(2.5))
+                            .rounded_full()
+                            .bg(theme.sidebar_primary)
+                    }))
+                    .child(
+                        div()
+                            .text_xs()
+                            .when(is_active, |d| d.font_semibold())
+                            .text_color(if is_active { theme.sidebar_accent_foreground } else { label_fg })
+                            .child(screen.label()),
+                    )
                     .child(div().text_xs().text_color(theme.muted_foreground).child(cnt.to_string()))
                     .test_support(),
             );

@@ -24,7 +24,7 @@ use super::super::markdown::MarkdownProjectContext;
 use super::super::state::{AppEvent, AppState, ScreenCommand};
 use self::commit_banner::render_commit_banner;
 use self::file_table::render_file_table;
-use self::header::{render_namespace_bar, render_project_header};
+use self::header::render_project_header;
 use self::info_panel::render_info_panel;
 use self::readme_card::render_readme_card;
 use self::toolbar::render_repo_toolbar;
@@ -156,7 +156,6 @@ impl Render for ProjectOverviewView {
                 .into_any_element();
         };
 
-        let ns_bar = render_namespace_bar(&project, &self.state, cx);
         let header = render_project_header(&project, self.detail.as_ref(), self.starred, client.as_ref(), cx);
         let toolbar = render_repo_toolbar(self, &project, self.detail.as_ref(), cx);
         let commit_bar = render_commit_banner(self.latest_commit.as_ref(), self.commit_loading, self.commit_expanded, &self.state, cx);
@@ -172,18 +171,14 @@ impl Render for ProjectOverviewView {
         );
 
         div()
-            .size_full().flex().flex_col()
-            .child(ns_bar)
-            .child(
-                div().id("overview-scroll").flex_1().min_h_0().overflow_y_scroll().px_6().py_4().child(
-                    div().w_full().flex().flex_col().child(header).child(
-                        div().w_full().flex().flex_row().items_start().gap_6()
-                            .child(
-                                div().flex_1().min_w_0().flex().flex_col().gap_3()
-                                    .child(toolbar).child(commit_bar).child(table).children(readme),
-                            )
-                            .child(info),
-                    ),
+            .id("overview-scroll").size_full().overflow_y_scroll().px_6().py_4().child(
+                div().w_full().flex().flex_col().child(header).child(
+                    div().w_full().flex().flex_row().items_start().gap_6()
+                        .child(
+                            div().flex_1().min_w_0().flex().flex_col().gap_3()
+                                .child(toolbar).child(commit_bar).child(table).children(readme),
+                        )
+                        .child(info),
                 ),
             )
             .into_any_element()

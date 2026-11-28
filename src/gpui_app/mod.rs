@@ -1,6 +1,7 @@
 pub mod actions;
 pub mod assets;
 pub mod avatar;
+pub mod breadcrumb;
 pub mod confirm;
 pub mod diff_hl;
 pub mod image_cache;

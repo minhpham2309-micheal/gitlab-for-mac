@@ -44,7 +44,7 @@ pub fn render_mr_file_tree(
         .id("mr-file-tree")
         .size_full()
         .overflow_y_scroll()
-        .bg(theme.sidebar)
+        .bg(theme.background)
         .border_r_1()
         .border_color(theme.border)
         .flex()

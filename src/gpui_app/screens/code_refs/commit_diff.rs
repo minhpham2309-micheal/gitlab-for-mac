@@ -105,7 +105,7 @@ pub fn render_commit_diff_pane(view: &CommitsView, cx: &mut Context<CommitsView>
     let notices = (!view.diff_loading && view.diff_error.is_none() && !view.fallback_notices.is_empty()).then(|| {
         div()
             .id("commit-diff-notices").w_full().px_4().py_2()
-            .border_b_1().border_color(theme.border).bg(theme.sidebar).flex().flex_col().gap_1()
+            .border_b_1().border_color(theme.border).bg(theme.list_head).flex().flex_col().gap_1()
             .children(view.fallback_notices.iter().enumerate().map(|(ix, (path, note))| {
                 div().id(SharedString::from(format!("commit-diff-notice-{ix}")))
                     .text_xs().text_color(theme.muted_foreground).child(format!("⚠ {path}: {note}"))

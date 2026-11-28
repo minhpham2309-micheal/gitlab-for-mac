@@ -5,7 +5,7 @@ use gpui_kit::{
 
 use crate::gitlab::{GitLab, Project};
 
-use super::super::avatar::render_avatar;
+use super::super::avatar::render_entity_avatar;
 use super::super::state::AppState;
 
 pub fn render_project_row(
@@ -15,10 +15,10 @@ pub fn render_project_row(
     state: Entity<AppState>,
     cx: &mut App,
 ) -> impl IntoElement + use<> {
-    let av = render_avatar(
+    let av = render_entity_avatar(
         project.avatar_url.as_deref(),
         &project.name,
-        px(32.),
+        px(36.),
         client,
         cx,
     );

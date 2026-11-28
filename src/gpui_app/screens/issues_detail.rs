@@ -143,7 +143,7 @@ pub fn render_issue_detail(
                 .rounded_md()
                 .border_1()
                 .border_color(theme.border)
-                .bg(theme.sidebar)
+                .bg(theme.list_head)
                 .child(desc_el),
         )
         .children(note_els)
