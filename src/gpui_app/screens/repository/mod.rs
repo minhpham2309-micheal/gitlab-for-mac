@@ -17,7 +17,7 @@ use gpui_kit::{
     Styled as _, Subscription, Task, Window,
 };
 
-use crate::gitlab::{RepoBlob, RepoBlobKind, RepoTreeEntry};
+use crate::gitlab::{RepoBlob, RepoBlobKind, RepoCommit, RepoTreeEntry};
 use crate::nav::Screen;
 
 use super::super::markdown::MarkdownProjectContext;
@@ -33,6 +33,7 @@ pub struct RepositoryView {
     pub(super) active_ref: String,
     pub(super) active_path: Option<String>,
     pub(super) active_blob: Option<RepoBlob>,
+    pub(super) file_last_commit: Option<RepoCommit>,
     pub(super) decoded_image: Option<Arc<Image>>,
     pub(super) blob_loading: bool,
     pub(super) blob_error: Option<String>,
@@ -43,6 +44,7 @@ pub struct RepositoryView {
     pub(super) markdown_preview: bool,
     pub(super) soft_wrap: bool,
     pub(super) blob_task: Option<Task<()>>,
+    pub(super) commit_task: Option<Task<()>>,
     pub(super) dir_tasks: HashMap<String, Task<()>>,
     _subs: Vec<Subscription>,
 }
@@ -85,11 +87,11 @@ impl RepositoryView {
         });
         Self {
             state, editor_state, tree_filter, active_ref: "main".into(),
-            active_path: None, active_blob: None, decoded_image: None,
+            active_path: None, active_blob: None, file_last_commit: None, decoded_image: None,
             blob_loading: false, blob_error: None, blob_seq: 1,
             dirs: HashMap::new(), expanded_dirs: HashSet::new(),
             show_tree: true, markdown_preview: true, soft_wrap: false,
-            blob_task: None, dir_tasks: HashMap::new(), _subs: vec![sub_f, sub_s],
+            blob_task: None, commit_task: None, dir_tasks: HashMap::new(), _subs: vec![sub_f, sub_s],
         }
     }
 
@@ -111,8 +113,13 @@ impl RepositoryView {
         self.apply_blob(&path, blob, line, window, cx);
     }
 
+    pub fn set_fixture_last_commit(&mut self, commit: Option<RepoCommit>, cx: &mut Context<Self>) {
+        self.file_last_commit = commit;
+        cx.notify();
+    }
+
     fn reset_for_project(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.blob_task = None;
+        (self.blob_task, self.commit_task, self.file_last_commit) = (None, None, None);
         self.dir_tasks.clear();
         let st = self.state.read(cx);
         self.active_ref = st.active_ref.clone()

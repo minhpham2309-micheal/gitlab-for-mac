@@ -96,13 +96,22 @@ pub struct Issue {
     pub user_notes_count: u32,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct Todo {
+    #[serde(default)]
     pub id: u64,
+    #[serde(default)]
     pub action_name: String,
+    #[serde(default)]
     pub target_url: Option<String>,
+    #[serde(default)]
     pub body: String,
+    #[serde(default)]
     pub state: String,
+    #[serde(default)]
+    pub created_at: Option<String>,
+    #[serde(default)]
+    pub author: Option<User>,
     #[serde(default)]
     pub project: Option<TodoProject>,
     #[serde(default)]
@@ -111,12 +120,26 @@ pub struct Todo {
     pub target: Option<TodoTarget>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct Release {
+    #[serde(default)]
     pub tag_name: String,
+    #[serde(default)]
     pub name: Option<String>,
+    #[serde(default)]
+    pub created_at: Option<String>,
+    #[serde(default)]
     pub released_at: Option<String>,
+    #[serde(default)]
     pub description: Option<String>,
+    #[serde(default)]
+    pub author: Option<User>,
+    #[serde(default)]
+    pub commit: Option<super::types_ops::ReleaseCommit>,
+    #[serde(default)]
+    pub assets: Option<super::types_ops::ReleaseAssets>,
+    #[serde(default)]
+    pub evidences: Vec<super::types_ops::ReleaseEvidence>,
     #[serde(default, rename = "_links")]
     pub links: Option<ReleaseLinks>,
 }

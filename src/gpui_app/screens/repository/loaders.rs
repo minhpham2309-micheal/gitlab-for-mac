@@ -84,6 +84,8 @@ impl RepositoryView {
         self.expand_ancestors(&path, cx);
         self.active_path = Some(path.clone());
         self.active_blob = None;
+        self.file_last_commit = None;
+        self.commit_task = None;
         self.decoded_image = None;
         self.markdown_preview = is_markdown_path(&path);
         self.blob_error = None;
@@ -96,6 +98,24 @@ impl RepositoryView {
         let origin = client.origin().ascii_serialization();
         let cache = cx.try_global::<RepoCache>().cloned();
         let cache_gen = cache.as_ref().map(RepoCache::generation).unwrap_or(0);
+
+        if !offline {
+            let (c_meta, ref_meta, path_meta) = (client.clone(), self.active_ref.clone(), path.clone());
+            self.commit_task = Some(cx.spawn(async move |this, cx| {
+                let res = spawn_tokio(async move {
+                    c_meta.repo_commits(project.id, &ref_meta, Some(&path_meta), 1, 1).await.ok()
+                }).await;
+                let _ = this.update(cx, |v, cx| {
+                    let cur = v.state.read(cx);
+                    if cur.host_epoch == h_ep && cur.project_epoch == p_ep && v.blob_seq == seq
+                        && let Ok(Some(mut list)) = res
+                    {
+                        v.file_last_commit = list.pop();
+                        cx.notify();
+                    }
+                });
+            }));
+        }
 
         if let Some(sha) = blob_sha.as_deref()
             && let Some(blob) = cache.as_ref().and_then(|c| c.get_blob(&origin, project.id, sha)) {

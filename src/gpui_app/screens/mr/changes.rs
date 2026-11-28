@@ -43,15 +43,8 @@ pub fn render_mr_changes(
     let view_ref = head_sha
         .map(str::to_owned)
         .unwrap_or_else(|| mr.source_branch.clone());
-    let file_tree = render_mr_file_tree(
-        &view.diff_state,
-        view.raw_diffs.len(),
-        &view.fallback_notices,
-        &view.state,
-        &view_ref,
-        cx,
-    );
-    let toolbar = render_mr_diff_toolbar(&view.diff_state, view.has_truncated, cx);
+    let file_tree = render_mr_file_tree(view, &view_ref, cx);
+    let toolbar = render_mr_diff_toolbar(view, cx);
     let view_weak = cx.entity().downgrade();
     let view_add = cx.entity().downgrade();
     let composer_input = view.inline_input.clone();

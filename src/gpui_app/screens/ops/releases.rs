@@ -1,23 +1,32 @@
+use std::collections::HashSet;
+
 use gpui_kit::{
+    base::StyledExt as _,
     component::{
         button::{Button, ButtonVariants as _},
-        ActiveTheme as _, Sizable as _,
+        menu::{DropdownMenu as _, PopupMenuItem},
+        ActiveTheme as _, Icon, IconName, Sizable as _,
     },
     div, px, Context, Entity, InteractiveElement as _, IntoElement, ParentElement as _, Render,
-    SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Task, Window,
+    StatefulInteractiveElement as _, Styled as _, Subscription, Task, TestSupportExt as _, Window,
 };
 
-use crate::gitlab::Release;
+use crate::gitlab::{sort_releases, Release, ReleaseSortField, SortDir};
 use crate::nav::Screen;
 use crate::runtime::spawn_tokio;
 
-use super::super::super::markdown::{render_markdown_with_uploads, MarkdownProjectContext};
+use super::super::super::markdown::MarkdownProjectContext;
 use super::super::super::safe_url::safe_open_url;
 use super::super::super::state::{AppEvent, AppState, ScreenCommand};
+use super::releases_card::render_release_card;
 
 pub struct ReleasesView {
-    state: Entity<AppState>,
+    pub(super) state: Entity<AppState>,
     releases: Vec<Release>,
+    sort_field: ReleaseSortField,
+    sort_dir: SortDir,
+    pub(super) collapsed_assets: HashSet<String>,
+    loading: bool,
     task: Option<Task<()>>,
     _sub: Subscription,
 }
@@ -27,10 +36,10 @@ impl ReleasesView {
         let _sub = cx.subscribe_in(&state, window, |this, _, ev: &AppEvent, _, cx| match ev {
             AppEvent::HostChanged { .. } | AppEvent::ProjectChanged { .. } => {
                 this.task = None;
+                this.loading = false;
                 this.releases.clear();
-                if this.state.read(cx).screen == Screen::Releases {
-                    this.load(cx);
-                }
+                this.collapsed_assets.clear();
+                if this.state.read(cx).screen == Screen::Releases { this.load(cx); }
                 cx.notify();
             }
             AppEvent::ScreenChanged { screen } if *screen == Screen::Releases && this.releases.is_empty() => {
@@ -41,7 +50,32 @@ impl ReleasesView {
             }
             _ => {}
         });
-        Self { state, releases: Vec::new(), task: None, _sub }
+        Self {
+            state, releases: Vec::new(), sort_field: ReleaseSortField::ReleasedAt,
+            sort_dir: SortDir::Desc, collapsed_assets: HashSet::new(), loading: false, task: None, _sub,
+        }
+    }
+
+    pub fn set_fixture_data(&mut self, releases: Vec<Release>, cx: &mut Context<Self>) {
+        (self.releases, self.loading) = (releases, false);
+        self.collapsed_assets.clear();
+        cx.notify();
+    }
+
+    pub fn is_assets_collapsed(&self, tag: &str) -> bool { self.collapsed_assets.contains(tag) }
+
+    pub(super) fn toggle_assets(&mut self, tag: String, cx: &mut Context<Self>) {
+        if !self.collapsed_assets.remove(&tag) { self.collapsed_assets.insert(tag); }
+        cx.notify();
+    }
+
+    pub fn set_sort_field(&mut self, field: ReleaseSortField, cx: &mut Context<Self>) {
+        if self.sort_field != field { self.sort_field = field; cx.notify(); }
+    }
+
+    pub fn toggle_sort_dir(&mut self, cx: &mut Context<Self>) {
+        self.sort_dir = self.sort_dir.toggle();
+        cx.notify();
     }
 
     fn load(&mut self, cx: &mut Context<Self>) {
@@ -49,11 +83,14 @@ impl ReleasesView {
         if st.offline_mode { return; }
         let (Some(client), Some(project)) = (st.gitlab.clone(), st.project.clone()) else { return; };
         let (h_ep, p_ep) = (st.host_epoch, st.project_epoch);
+        self.loading = true;
+        cx.notify();
         self.task = Some(cx.spawn(async move |this, cx| {
             let res = spawn_tokio(async move { client.releases(project.id).await.map_err(|e| e.to_string()) }).await;
             let _ = this.update(cx, |v, cx| {
                 let cur = v.state.read(cx);
                 if cur.host_epoch != h_ep || cur.project_epoch != p_ep { return; }
+                v.loading = false;
                 match res {
                     Ok(Ok(items)) => v.releases = items,
                     Ok(Err(err)) | Err(err) => v.state.update(cx, |s, cx| s.set_status(err, cx)),
@@ -66,94 +103,62 @@ impl ReleasesView {
 
 impl Render for ReleasesView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let md_ctx = MarkdownProjectContext::from_state(self.state.read(cx), cx);
-        let cards: Vec<_> = self
-            .releases
-            .iter()
-            .enumerate()
-            .map(|(ix, rel)| {
-                let title = rel.name.clone().unwrap_or_else(|| rel.tag_name.clone());
-                let date = rel.released_at.as_deref().and_then(|s| s.get(..10)).unwrap_or("").to_string();
-                let notes = rel.description.clone().filter(|s| !s.trim().is_empty()).unwrap_or_else(|| "_No release notes._".into());
-                let self_url = rel.links.as_ref().and_then(|l| l.self_url.clone());
-                let md_el = render_markdown_with_uploads(format!("rel-md-{ix}"), notes, md_ctx.clone(), cx);
-                let theme = cx.theme();
-                div()
-                    .p_4()
-                    .rounded_md()
-                    .border_1()
-                    .border_color(theme.border)
-                    .bg(theme.list_head)
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .justify_between()
-                            .gap_2()
-                            .child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .gap_2()
-                                    .child(
-                                        div()
-                                            .px_2()
-                                            .py(px(1.))
-                                            .rounded_full()
-                                            .bg(theme.primary.opacity(0.18))
-                                            .text_color(theme.primary)
-                                            .text_xs()
-                                            .font_family(theme.mono_font_family.clone())
-                                            .child(rel.tag_name.clone()),
-                                    )
-                                    .child(div().text_sm().text_color(theme.foreground).child(title))
-                                    .child(div().text_xs().text_color(theme.muted_foreground).child(date)),
-                            )
-                            .children(self_url.map(|url| {
-                                Button::new(SharedString::from(format!("rel-web-{ix}")))
-                                    .ghost()
-                                    .xsmall()
-                                    .label("Open web")
-                                    .on_click(move |_, _, _| {
-                                        let _ = safe_open_url(&url);
-                                    })
-                            })),
-                    )
-                    .child(md_el)
-            })
-            .collect();
-        let theme = cx.theme();
+        let (md_ctx, client, project_web) = {
+            let st = self.state.read(cx);
+            (
+                MarkdownProjectContext::from_state(st, cx),
+                st.gitlab.clone(),
+                st.project.as_ref().map(|p| p.web_url.clone()).filter(|u| !u.is_empty()),
+            )
+        };
+        let ordered = sort_releases(&self.releases, self.sort_field, self.sort_dir);
+        let sort_field = self.sort_field;
+        let sort_icon = match self.sort_dir { SortDir::Desc => IconName::SortDescending, SortDir::Asc => IconName::SortAscending };
+        let weak = cx.entity().downgrade();
 
-        div()
-            .size_full()
-            .flex()
-            .flex_col()
+        let cards: Vec<_> = ordered.iter().enumerate().map(|(ix, rel)| {
+            render_release_card(ix, rel, self.is_assets_collapsed(&rel.tag_name), md_ctx.clone(), client.as_ref(), &self.state, cx)
+        }).collect();
+
+        let theme = cx.theme();
+        let header = div().w_full().pb_4().flex().items_center().justify_between().gap_4()
+            .child(div().text_2xl().font_bold().text_color(theme.foreground).child("Releases"))
             .child(
-                div()
-                    .px_4()
-                    .py_3()
-                    .border_b_1()
-                    .border_color(theme.border)
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .child(div().text_base().text_color(theme.foreground).child(format!("Releases ({})", self.releases.len())))
-                    .child(Button::new("rel-reload").outline().small().label("Reload").on_click(cx.listener(|this, _, _, cx| this.load(cx)))),
-            )
+                div().flex().items_center().gap_1p5().flex_shrink_0()
+                    .child(Button::new("rel-sort-field").outline().small().label(format!("{} ▾", sort_field.label()))
+                        .dropdown_menu(move |mut menu, _, _| {
+                            for f in ReleaseSortField::ALL {
+                                let w = weak.clone();
+                                menu = menu.item(PopupMenuItem::new(f.label()).checked(sort_field == f).on_click(move |_, _, cx| {
+                                    let _ = w.update(cx, |v, cx| v.set_sort_field(f, cx));
+                                }));
+                            }
+                            menu
+                        }))
+                    .child(Button::new("rel-sort-dir").outline().small().icon(Icon::new(sort_icon).size_3p5())
+                        .on_click(cx.listener(|this, _, _, cx| this.toggle_sort_dir(cx))))
+                    .child(Button::new("rel-reload").outline().small().icon(Icon::new(IconName::RefreshCw).size_3p5())
+                        .on_click(cx.listener(|this, _, _, cx| this.load(cx))))
+                    .children(project_web.map(|u| {
+                        let url = format!("{}/-/releases", u.trim_end_matches('/'));
+                        Button::new("rel-open-web").ghost().small().icon(Icon::new(IconName::ExternalLink).size_3p5())
+                            .on_click(move |_, _, _| { let _ = safe_open_url(&url); })
+                    })),
+            );
+
+        let body = if cards.is_empty() {
+            div().id("releases-empty").py_12().flex().items_center().justify_center().text_sm().text_color(theme.muted_foreground)
+                .child(if self.loading { "Loading releases…" } else { "No releases yet." }).test_support().into_any_element()
+        } else {
+            div().w_full().flex().flex_col().gap_4().pb_6().children(cards).into_any_element()
+        };
+
+        div().id("releases-screen").size_full().flex().flex_col().items_center().px_6().pt_3().overflow_hidden()
             .child(
-                div()
-                    .id("releases-scroll")
-                    .flex_1()
-                    .min_h_0()
-                    .overflow_y_scroll()
-                    .p_4()
-                    .flex()
-                    .flex_col()
-                    .gap_3()
-                    .children(cards),
+                div().w_full().max_w(px(1200.)).flex_1().min_h_0().flex().flex_col()
+                    .child(header)
+                    .child(div().id("releases-scroll").flex_1().min_h_0().overflow_y_scroll().pr_1().child(body)),
             )
+            .test_support()
     }
 }

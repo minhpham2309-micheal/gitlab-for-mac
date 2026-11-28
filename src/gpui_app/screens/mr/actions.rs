@@ -31,6 +31,8 @@ impl MergeRequestsView {
         self.todo_added = false;
         self.raw_diffs.clear();
         self.fallback_notices.clear();
+        self.viewed_files.clear();
+        self.collapsed_diff_dirs.clear();
         self.has_truncated = false;
         self.discussions.clear();
         self.discussions_error = None;

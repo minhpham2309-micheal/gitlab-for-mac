@@ -115,6 +115,9 @@ impl AppShell {
     pub fn commits_view(&self) -> &Entity<CommitsView> { &self.commits_view }
     pub fn branches_view(&self) -> &Entity<BranchesView> { &self.branches_view }
     pub fn tags_view(&self) -> &Entity<TagsView> { &self.tags_view }
+    pub fn releases_view(&self) -> &Entity<ReleasesView> { &self.releases_view }
+    pub fn todos_view(&self) -> &Entity<TodosView> { &self.todos_view }
+    pub fn issues_view(&self) -> &Entity<IssuesView> { &self.issues_view }
 
     pub(crate) fn toggle_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.palette_open = !self.palette_open;
