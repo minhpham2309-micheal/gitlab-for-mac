@@ -1,4 +1,5 @@
 pub mod code_refs;
+pub mod groups;
 pub mod issues;
 pub mod issues_actions;
 pub mod issues_detail;

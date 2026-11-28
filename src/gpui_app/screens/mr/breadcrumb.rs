@@ -38,12 +38,16 @@ pub fn render_mr_breadcrumb(
         .min_w_0()
         .text_xs();
 
+    let mut acc = String::new();
     for (ix, seg) in segments.into_iter().enumerate() {
         if ix > 0 {
             row = row.child(div().text_color(theme.muted_foreground).child("/"));
+            acc.push('/');
         }
+        acc.push_str(seg);
         let is_project = ix == last_ix;
         let label = if is_project { project.name.clone() } else { seg.to_string() };
+        let group_path = acc.clone();
         let st = app_state.clone();
         row = row.child(
             div()
@@ -52,8 +56,11 @@ pub fn render_mr_breadcrumb(
                 .text_color(theme.muted_foreground)
                 .hover(|s| s.text_color(theme.foreground))
                 .on_click(move |_, _, cx| {
-                    let target = if is_project { Screen::ProjectOverview } else { Screen::Projects };
-                    st.update(cx, |s, cx| s.set_screen(target, cx));
+                    if is_project {
+                        st.update(cx, |s, cx| s.set_screen(Screen::ProjectOverview, cx));
+                    } else {
+                        st.update(cx, |s, cx| s.open_group(Some(group_path.clone()), cx));
+                    }
                 })
                 .child(label),
         );

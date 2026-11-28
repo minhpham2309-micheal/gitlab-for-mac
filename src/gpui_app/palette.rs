@@ -51,6 +51,7 @@ pub fn render_palette_overlay<F: Fn(&mut Window, &mut App) + Clone + 'static>(
         .item(nav_item("Go back (⌘[)", Icon::new(IconName::ArrowLeft), &["back", "previous", "history"], no_back, NavBack))
         .item(nav_item("Go forward (⌘])", Icon::new(IconName::ArrowRight), &["forward", "next", "history"], no_fwd, NavForward))
         .item(nav_item("Projects", Icon::new(IconName::Folder), &["repos", "switch"], false, GoProjects))
+        .item(nav_item("Groups", Icon::new(IconName::FolderOpen), &["subgroups", "namespaces", "org"], false, GoGroups))
         .item(nav_item("Project overview", Icon::new(IconName::LayoutDashboard), &["home", "files", "readme"], no_proj, GoOverview))
         .item(nav_item("Repository / Source", Icon::new(IconName::FolderClosed), &["code", "source", "files"], no_proj, GoRepository))
         .item(nav_item("Find file (⌘T)", Icon::new(IconName::Search), &["quick open", "fuzzy", "tree"], no_proj, OpenFindFile))

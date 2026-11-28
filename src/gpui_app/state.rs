@@ -17,6 +17,7 @@ pub struct AppState {
     pub current_user: Option<User>,
     pub projects: Vec<Project>,
     pub project: Option<Project>,
+    pub active_group_path: Option<String>,
     pub project_permissions: ProjectPermissions,
     pub active_ref: Option<String>,
     pub screen: Screen,
@@ -63,6 +64,7 @@ impl AppState {
             current_user: None,
             projects,
             project: None,
+            active_group_path: None,
             project_permissions: ProjectPermissions::unknown(),
             active_ref: None,
             screen: Screen::Projects,
@@ -112,6 +114,7 @@ impl AppState {
         self.current_user = None;
         self.projects.clear();
         self.project = None;
+        self.active_group_path = None;
         self.project_permissions = ProjectPermissions::unknown();
         self.active_ref = None;
         self.counts = SidebarCounts::default();

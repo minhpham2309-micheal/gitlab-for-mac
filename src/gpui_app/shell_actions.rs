@@ -151,6 +151,7 @@ pub fn attach_shell_actions(
         }));
 
     root = on_go::<GoProjects>(root, Screen::Projects, cx);
+    root = on_go::<GoGroups>(root, Screen::Groups, cx);
     root = on_go::<GoOverview>(root, Screen::ProjectOverview, cx);
     root = on_go::<GoRepository>(root, Screen::Repository, cx);
     root = on_go::<GoPipelines>(root, Screen::Pipelines, cx);

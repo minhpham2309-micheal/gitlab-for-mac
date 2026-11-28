@@ -12,6 +12,7 @@ use super::pajamas_theme::{apply_theme_from_prefs, studio_panel_border, studio_s
 use super::palette::render_palette_overlay;
 use super::screens::{
     code_refs::{BranchesView, CommitsView, TagsView},
+    groups::GroupsView,
     issues::IssuesView,
     login::LoginView,
     merge_requests::MergeRequestsView,
@@ -37,6 +38,7 @@ pub struct AppShell {
     state: Entity<AppState>,
     command_state: Entity<CommandState>,
     projects_view: Entity<ProjectsView>,
+    groups_view: Entity<GroupsView>,
     overview_view: Entity<ProjectOverviewView>,
     repo_view: Entity<RepositoryView>,
     pipelines_view: Entity<PipelinesView>,
@@ -74,6 +76,7 @@ impl AppShell {
         Self {
             command_state: cx.new(|cx| CommandState::new(window, cx)),
             projects_view: cx.new(|cx| ProjectsView::new(s.clone(), window, cx)),
+            groups_view: cx.new(|cx| GroupsView::new(s.clone(), window, cx)),
             overview_view: cx.new(|cx| ProjectOverviewView::new(s.clone(), window, cx)),
             repo_view: cx.new(|cx| RepositoryView::new(s.clone(), window, cx)),
             pipelines_view: cx.new(|cx| PipelinesView::new(s.clone(), window, cx)),
@@ -108,6 +111,7 @@ impl AppShell {
     pub fn pipelines_view(&self) -> &Entity<PipelinesView> { &self.pipelines_view }
     pub fn repo_view(&self) -> &Entity<RepositoryView> { &self.repo_view }
     pub fn overview_view(&self) -> &Entity<ProjectOverviewView> { &self.overview_view }
+    pub fn groups_view(&self) -> &Entity<GroupsView> { &self.groups_view }
     pub fn commits_view(&self) -> &Entity<CommitsView> { &self.commits_view }
 
     pub(crate) fn toggle_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -150,6 +154,7 @@ impl AppShell {
     fn render_screen_body(&self, cx: &Context<Self>) -> AnyElement {
         match self.state.read(cx).screen {
             Screen::Projects => self.projects_view.clone().into_any_element(),
+            Screen::Groups => self.groups_view.clone().into_any_element(),
             Screen::ProjectOverview => self.overview_view.clone().into_any_element(),
             Screen::Repository => self.repo_view.clone().into_any_element(),
             Screen::Pipelines => self.pipelines_view.clone().into_any_element(),

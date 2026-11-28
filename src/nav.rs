@@ -1,6 +1,7 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Screen {
     Projects,
+    Groups,
     ProjectOverview,
     Repository,
     Pipelines,
@@ -19,16 +20,17 @@ pub enum Screen {
 }
 
 impl Screen {
-    pub const ALL: [Screen; 16] = [
-        Screen::Projects, Screen::ProjectOverview, Screen::Repository, Screen::Pipelines,
-        Screen::MergeRequests, Screen::Branches, Screen::Tags, Screen::Commits,
-        Screen::Issues, Screen::Todos, Screen::Releases, Screen::Schedules,
+    pub const ALL: [Screen; 17] = [
+        Screen::Projects, Screen::Groups, Screen::ProjectOverview, Screen::Repository,
+        Screen::Pipelines, Screen::MergeRequests, Screen::Branches, Screen::Tags,
+        Screen::Commits, Screen::Issues, Screen::Todos, Screen::Releases, Screen::Schedules,
         Screen::Runners, Screen::Search, Screen::Console, Screen::Preferences,
     ];
 
     pub fn label(self) -> &'static str {
         match self {
             Screen::Projects => "Projects",
+            Screen::Groups => "Groups",
             Screen::ProjectOverview => "Project overview",
             Screen::Repository => "Repository",
             Screen::Pipelines => "Pipelines",
@@ -50,6 +52,7 @@ impl Screen {
     pub fn key(self) -> &'static str {
         match self {
             Screen::Projects => "projects",
+            Screen::Groups => "groups",
             Screen::ProjectOverview => "overview",
             Screen::Repository => "repository",
             Screen::Pipelines => "pipelines",
@@ -178,7 +181,7 @@ mod tests {
             let grouped = NavSection::of(screen).is_some();
             let ungrouped = matches!(
                 screen,
-                Screen::Projects | Screen::ProjectOverview | Screen::Todos | Screen::Console | Screen::Preferences
+                Screen::Projects | Screen::Groups | Screen::ProjectOverview | Screen::Todos | Screen::Console | Screen::Preferences
             );
             assert_eq!(grouped, !ungrouped, "{screen:?}");
         }

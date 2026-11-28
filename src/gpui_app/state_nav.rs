@@ -95,7 +95,36 @@ impl AppState {
         } else if screen == Screen::MergeRequests && matches!(self.history.current().target, NavTarget::MrDetail { .. }) {
             self.record_mr_list(cx);
             self.dispatch_command(ScreenCommand::ShowMrList, cx);
+        } else if screen == Screen::Groups && self.active_group_path.is_some() {
+            self.open_group(None, cx);
         }
+    }
+
+    pub fn record_group_nav(&mut self, full_path: Option<String>, cx: &mut Context<Self>) {
+        let normalized = full_path
+            .map(|p| p.trim_matches('/').to_string())
+            .filter(|p| !p.is_empty());
+        self.active_group_path = normalized.clone();
+        let entry = NavEntry {
+            project_id: self.project.as_ref().map(|p| p.id),
+            screen: Screen::Groups,
+            target: NavTarget::Group { full_path: normalized },
+        };
+        self.push_history(entry, cx);
+        cx.notify();
+    }
+
+    pub fn open_group(&mut self, full_path: Option<String>, cx: &mut Context<Self>) {
+        let normalized = full_path
+            .map(|p| p.trim_matches('/').to_string())
+            .filter(|p| !p.is_empty());
+        self.active_group_path = normalized.clone();
+        let entry = NavEntry {
+            project_id: self.project.as_ref().map(|p| p.id),
+            screen: Screen::Groups,
+            target: NavTarget::Group { full_path: normalized.clone() },
+        };
+        self.open_with_entry(entry, ScreenCommand::OpenGroup { full_path: normalized }, cx);
     }
 
     pub fn record_mr_detail(&mut self, iid: u64, cx: &mut Context<Self>) {
@@ -207,6 +236,10 @@ impl AppState {
             NavTarget::MrDetail { iid } => {
                 let project_id = entry.project_id.or_else(|| self.project.as_ref().map(|p| p.id)).unwrap_or(0);
                 self.dispatch_command(ScreenCommand::OpenMr { project_id, iid }, cx);
+            }
+            NavTarget::Group { full_path } => {
+                self.active_group_path = full_path.clone();
+                self.dispatch_command(ScreenCommand::OpenGroup { full_path }, cx);
             }
         }
         cx.notify();
